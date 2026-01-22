@@ -1,0 +1,7 @@
+{
+  "name": "@tenue/api",
+  "private": true,
+  "scripts": {
+    "dev": "./run.sh"
+  }
+}

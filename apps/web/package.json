@@ -1,0 +1,7 @@
+{
+  "name": "@tenue/web",
+  "private": true,
+  "scripts": {
+    "dev": "next dev"
+  }
+}

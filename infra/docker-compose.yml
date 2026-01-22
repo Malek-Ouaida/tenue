@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: tenue-postgres
+    environment:
+      POSTGRES_USER: tenue
+      POSTGRES_PASSWORD: tenue
+      POSTGRES_DB: tenue
+    ports:
+      - "5433:5432"
+    volumes:
+      - tenue_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tenue -d tenue"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  tenue_pg:
