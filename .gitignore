@@ -48,3 +48,9 @@ infra/*.bak
 # backup / temp
 *.bak
 *.broken.*
+
+# Local seed credentials (DO NOT COMMIT)
+apps/api/seed/
+apps/api/apps/api/seed/
+**/seed_credentials.csv
+**/seed_credentials.txt
