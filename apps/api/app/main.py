@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from typing import Annotated, Any
 
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,21 +29,21 @@ app.add_middleware(
 )
 
 @app.get("/health")
-def health():
+def health() -> dict[str, Any]:
     return {"ok": True, "env": settings.app_env}
 
 @app.get("/db/ping")
-def db_ping():
+def db_ping() -> dict[str, Any]:
     with engine.connect() as conn:
         val = conn.execute(text("select 1")).scalar_one()
     return {"ok": True, "db": val}
 
 @app.get("/redis/ping")
-def redis_ping():
+def redis_ping() -> dict[str, Any]:
     return {"ok": True, "redis": redis_client.ping()}
 
 @app.post("/s3/upload")
-async def s3_upload(file: UploadFile = File(...)):
+async def s3_upload(file: Annotated[UploadFile, File(...)]) -> dict[str, Any]:
     # key like: uploads/<uuid>.ext
     ext = ""
     if file.filename and "." in file.filename:

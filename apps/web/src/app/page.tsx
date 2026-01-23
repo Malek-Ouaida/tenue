@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-type ApiResult = any;
+type ApiResult = { ok: boolean; db?: number } | null;
 
 export default function HomePage() {
   const base = process.env.NEXT_PUBLIC_API_URL ?? "";
@@ -21,9 +21,9 @@ export default function HomePage() {
           throw new Error(`HTTP ${res.status} ${res.statusText}\n${text}`);
         }
 
-        setData(text ? JSON.parse(text) : null);
-      } catch (e: any) {
-        setError(e?.message ?? String(e));
+        setData(text ? (JSON.parse(text) as ApiResult) : null);
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : String(e));
       }
     };
 

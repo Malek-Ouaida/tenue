@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import boto3
 from botocore.client import Config
 
@@ -17,5 +19,5 @@ _s3 = boto3.client(
     config=Config(s3={"addressing_style": "path"}),
 )
 
-def s3_client():
+def s3_client() -> Any:
     return _s3

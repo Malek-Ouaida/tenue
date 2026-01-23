@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import boto3
 from botocore.client import Config
 
@@ -10,7 +12,7 @@ settings = get_settings()
 # For MinIO, use path-style addressing.
 _s3 = boto3.client(
     "s3",
-    endpoint_url=settings.s3_endpoint,
+    endpoint_url=settings.s3_endpoint_url,
     aws_access_key_id=settings.s3_access_key,
     aws_secret_access_key=settings.s3_secret_key,
     region_name=settings.s3_region,
@@ -28,5 +30,5 @@ def ensure_bucket() -> None:
         _s3.create_bucket(Bucket=BUCKET)
 
 
-def s3() -> boto3.client:
+def s3() -> Any:
     return _s3
