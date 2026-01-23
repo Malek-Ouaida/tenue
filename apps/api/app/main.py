@@ -7,10 +7,13 @@ from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
+from app.auth.router import router as auth_router
 from app.config import get_settings
 from app.db import engine
 from app.redis_client import redis_client
 from app.s3_client import s3_client
+from app.users.router import router as users_router
+from app.users.follow_routes import router as follow_router
 
 settings = get_settings()
 
@@ -28,9 +31,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- Routers ---
+app.include_router(auth_router)
+app.include_router(follow_router)
+app.include_router(users_router)
+
 @app.get("/health")
 def health() -> dict[str, Any]:
     return {"ok": True, "env": settings.app_env}
+
 
 @app.get("/db/ping")
 def db_ping() -> dict[str, Any]:
@@ -38,9 +47,11 @@ def db_ping() -> dict[str, Any]:
         val = conn.execute(text("select 1")).scalar_one()
     return {"ok": True, "db": val}
 
+
 @app.get("/redis/ping")
 def redis_ping() -> dict[str, Any]:
     return {"ok": True, "redis": redis_client.ping()}
+
 
 @app.post("/s3/upload")
 async def s3_upload(file: Annotated[UploadFile, File(...)]) -> dict[str, Any]:

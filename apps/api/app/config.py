@@ -36,6 +36,20 @@ class Settings(BaseModel):
     api_host: str = "127.0.0.1"
     api_port: int = 8000
 
+    # --- Auth / Security ---
+    jwt_secret: str
+    security_pepper: str
+
+    jwt_issuer: str = "tenue"
+    jwt_access_ttl_minutes: int = 15
+    refresh_ttl_days: int = 30
+
+    # Rate limits
+    rate_limit_login_ip_per_min: int = 10
+    rate_limit_login_email_per_15m: int = 5
+    rate_limit_register_ip_per_hr: int = 5
+    rate_limit_refresh_session_per_min: int = 30
+
 
 @lru_cache
 def get_settings() -> Settings:
@@ -54,4 +68,17 @@ def get_settings() -> Settings:
 
         api_host=os.getenv("API_HOST", "127.0.0.1"),
         api_port=int(os.getenv("API_PORT", 8000)),
+
+        # --- Auth / Security ---
+        jwt_secret=os.environ["JWT_SECRET"],
+        security_pepper=os.environ["SECURITY_PEPPER"],
+        jwt_issuer=os.getenv("JWT_ISSUER", "tenue"),
+        jwt_access_ttl_minutes=int(os.getenv("JWT_ACCESS_TTL_MINUTES", "15")),
+        refresh_ttl_days=int(os.getenv("REFRESH_TTL_DAYS", "30")),
+
+        # Rate limits (optional env overrides)
+        rate_limit_login_ip_per_min=int(os.getenv("RATE_LIMIT_LOGIN_IP_PER_MIN", "10")),
+        rate_limit_login_email_per_15m=int(os.getenv("RATE_LIMIT_LOGIN_EMAIL_PER_15M", "5")),
+        rate_limit_register_ip_per_hr=int(os.getenv("RATE_LIMIT_REGISTER_IP_PER_HR", "5")),
+        rate_limit_refresh_session_per_min=int(os.getenv("RATE_LIMIT_REFRESH_SESSION_PER_MIN", "30")),
     )
