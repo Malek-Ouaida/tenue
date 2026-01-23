@@ -1,0 +1,9 @@
+node_modules
+**/node_modules
+dist
+build
+.next
+.expo
+coverage
+apps/api/.venv
+apps/api/alembic/versions

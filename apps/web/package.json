@@ -2,6 +2,24 @@
   "name": "@tenue/web",
   "private": true,
   "scripts": {
-    "dev": "next dev"
+    "dev": "next dev",
+    "lint": "next lint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
+    "lint:fix": "pnpm exec eslint . --ext .js,.jsx,.ts,.tsx --fix",
+    "lint:check": "eslint . --ext .js,.jsx,.ts,.tsx"
+  },
+  "dependencies": {
+    "next": "16.1.4",
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.9",
+    "@types/react-dom": "19.2.9",
+    "eslint": "9",
+    "eslint-config-next": "16.1.4",
+    "typescript": "~5.9.3"
   }
 }
