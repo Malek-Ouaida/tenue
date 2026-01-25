@@ -5,11 +5,12 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.user_profile import UserProfile
+from app.models.user_follow import UserFollow
 
 # Sentinel to distinguish "not provided" from "provided as null"
 _UNSET = object()
@@ -85,6 +86,36 @@ def get_or_create_my_profile(db: Session, user_id: uuid.UUID) -> UserProfile:
 def get_public_profile_by_username(db: Session, username: str) -> UserProfile | None:
     u = _normalize_username(username)
     return db.execute(select(UserProfile).where(UserProfile.username == u)).scalar_one_or_none()
+
+
+def _get_follow_counts(db: Session, user_id: uuid.UUID) -> tuple[int, int]:
+    followers_count = db.execute(
+        select(func.count()).select_from(UserFollow).where(UserFollow.following_user_id == user_id)
+    ).scalar_one()
+    following_count = db.execute(
+        select(func.count()).select_from(UserFollow).where(UserFollow.follower_user_id == user_id)
+    ).scalar_one()
+    return int(followers_count), int(following_count)
+
+
+def get_follow_counts(db: Session, user_id: uuid.UUID) -> tuple[int, int]:
+    return _get_follow_counts(db, user_id)
+
+
+def get_my_profile_with_counts(db: Session, user_id: uuid.UUID) -> tuple[UserProfile, int, int]:
+    prof = get_or_create_my_profile(db, user_id)
+    followers_count, following_count = _get_follow_counts(db, user_id)
+    return prof, followers_count, following_count
+
+
+def get_public_profile_with_counts_by_username(
+    db: Session, username: str
+) -> tuple[UserProfile, int, int] | None:
+    prof = get_public_profile_by_username(db, username)
+    if not prof:
+        return None
+    followers_count, following_count = _get_follow_counts(db, prof.user_id)
+    return prof, followers_count, following_count
 
 
 def update_my_profile(

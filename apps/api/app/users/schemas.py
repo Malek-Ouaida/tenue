@@ -9,6 +9,8 @@ class UserProfileOut(BaseModel):
     display_name: str | None = None
     bio: str | None = None
     avatar_key: str | None = None
+    followers_count: int
+    following_count: int
 
     model_config = ConfigDict(extra="forbid")
 

@@ -1,8 +1,21 @@
 {
+  "name": "tenue",
+  "private": true,
+  "packageManager": "pnpm@10.28.1",
   "scripts": {
+    "dev:web": "pnpm -C apps/web dev",
+    "dev:app": "pnpm -C apps/app start",
     "format": "prettier . --write",
     "format:check": "prettier . --check",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck"
+  },
+  "pnpm": {
+    "overrides": {
+      "react": "19.0.0",
+      "react-dom": "19.0.0",
+      "@types/react": "19.2.3",
+      "@types/react-dom": "19.2.3"
+    }
   }
 }

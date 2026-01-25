@@ -1,26 +1,58 @@
 @import "tailwindcss";
 
+/* Luxury minimal tokens */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: 244 246 248;
+  --fg: 9 9 11;
+
+  /* Brand + accent */
+  --brand: 10 102 126;
+  --accent: 10 102 126;
+  --accent-2: 16 162 140;
+  --ring: 14 116 144;
+
+  /* Surfaces */
+  --surface: 245 247 250;
+  --surface-2: 240 244 248;
+  --card: 251 252 254;
+  --card-2: 240 244 248;
+
+  /* UI */
+  --border: 220 226 234;
+  --muted: 90 102 122;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+.dark {
+  --bg: 6 8 12;
+  --fg: 244 244 245;
+
+  /* Night accent shifts brighter */
+  --brand: 56 189 248;
+  --accent: 56 189 248;
+  --accent-2: 34 197 94;
+  --ring: 125 211 252;
+
+  --surface: 10 12 16;
+  --surface-2: 14 17 23;
+  --card: 12 14 18;
+  --card-2: 16 19 24;
+
+  --border: 51 65 85;
+  --muted: 148 163 184;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  height: 100%;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: rgb(var(--bg));
+  color: rgb(var(--fg));
+}
+
+/* optional: smoother font rendering */
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
