@@ -7,5 +7,8 @@
     "format": "bash -lc 'source .venv/bin/activate && ruff check --fix app && black app'",
     "format:check": "bash -lc 'source .venv/bin/activate && ruff check app && black --check app'",
     "typecheck": "bash -lc 'source .venv/bin/activate && mypy app'"
+  },
+  "dependencies": {
+    "lucide-react": "^0.563.0"
   }
 }
