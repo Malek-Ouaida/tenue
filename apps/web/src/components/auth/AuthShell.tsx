@@ -86,6 +86,7 @@ export function AuthShell({
               fill
               priority
               className="object-cover"
+              sizes="(min-width: 1024px) 50vw, 0vw"
             />
             {/* vignette */}
             <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(var(--surface)/0.10),rgba(var(--surface-2)/0.35))] dark:bg-[linear-gradient(to_bottom,rgba(var(--surface)/0.18),rgba(var(--surface-2)/0.45))]" />

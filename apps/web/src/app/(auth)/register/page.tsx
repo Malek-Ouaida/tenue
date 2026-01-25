@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { useForm } from "react-hook-form";
@@ -10,8 +12,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { AuthShell } from "@/components/auth/AuthShell";
 import { FloatingInput } from "@/components/ui/FloatingInput";
 import { PrimaryButton } from "@/components/ui/Buttons";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL!;
+import { apiFetch, setTokens } from "@/lib/api";
 
 const schema = z.object({
   email: z.string().email("Enter a valid email"),
@@ -25,22 +26,20 @@ const schema = z.object({
 });
 
 type FormValues = z.infer<typeof schema>;
-
-function parseErr(data: any) {
-  return (
-    data?.detail?.error ||
-    data?.detail?.message ||
-    data?.detail ||
-    data?.error ||
-    "Registration failed"
-  );
-}
+type AuthResponse = { access_token: string; refresh_token: string };
 
 export default function RegisterPage() {
+  const router = useRouter();
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: { email: "", username: "", display_name: "", password: "" },
     mode: "onChange",
+  });
+  const [skipIntro] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const flag = window.sessionStorage.getItem("landing-transition") === "1";
+    if (flag) window.sessionStorage.removeItem("landing-transition");
+    return flag;
   });
 
   const v = form.watch();
@@ -48,9 +47,8 @@ export default function RegisterPage() {
   const onSubmit = form.handleSubmit(async (values) => {
     const t = toast.loading("Creating account…");
     try {
-      const res = await fetch(`${API_URL}/auth/register`, {
+      const data = await apiFetch<AuthResponse>("/auth/register", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email: values.email,
           username: values.username,
@@ -59,16 +57,10 @@ export default function RegisterPage() {
         }),
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(parseErr(data));
-
-      localStorage.setItem(
-        "tenue_tokens",
-        JSON.stringify({ access: data.access_token, refresh: data.refresh_token })
-      );
+      setTokens({ access: data.access_token, refresh: data.refresh_token });
 
       toast.success("Account created.", { id: t });
-      window.location.href = "/me";
+      router.push("/app/me");
     } catch (e: any) {
       toast.error(e.message, { id: t });
     }
@@ -78,9 +70,9 @@ export default function RegisterPage() {
     <AuthShell mode="register">
       <motion.form
         onSubmit={onSubmit}
-        initial={{ opacity: 0, y: 8 }}
+        initial={skipIntro ? false : { opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35, ease: "easeOut" }}
+        transition={skipIntro ? undefined : { duration: 0.35, ease: "easeOut" }}
         className="grid gap-4"
       >
         <FloatingInput

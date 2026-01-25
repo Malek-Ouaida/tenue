@@ -34,7 +34,7 @@ export function ThemeLogo({
       alt="tenue"
       width={width}
       height={height}
-      className={className}
+      className={["h-auto w-auto", className].filter(Boolean).join(" ")}
       priority
     />
   );
