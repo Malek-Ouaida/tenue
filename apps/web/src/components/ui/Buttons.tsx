@@ -27,6 +27,7 @@ function GoogleIcon() {
 
 export function PrimaryButton({
   children,
+  className,
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
@@ -41,7 +42,32 @@ export function PrimaryButton({
         "disabled:opacity-50 disabled:cursor-not-allowed",
         "dark:text-zinc-950",
         "dark:bg-[linear-gradient(135deg,rgba(var(--accent)/0.9)_0%,rgba(var(--accent-2)/0.9)_100%)]",
+        className,
       ].join(" ")}
+    >
+      {children}
+    </button>
+  );
+}
+
+const secondaryButtonClasses = [
+  "h-11 w-full rounded-2xl transition",
+  "bg-[rgb(var(--card))] text-[rgb(var(--fg))]",
+  "ring-1 ring-[rgb(var(--border))]/70",
+  "shadow-sm hover:shadow-md",
+  "hover:bg-[rgb(var(--card-2))]",
+  "inline-flex items-center justify-center gap-2 text-sm font-medium",
+].join(" ");
+
+export function SecondaryButton({
+  children,
+  className,
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      {...props}
+      className={[secondaryButtonClasses, className].filter(Boolean).join(" ")}
     >
       {children}
     </button>
@@ -58,14 +84,7 @@ export function OAuthButton({
     <button
       {...props}
       type="button"
-      className={[
-        "h-11 w-full rounded-2xl transition",
-        "bg-[rgb(var(--card))] text-[rgb(var(--fg))]",
-        "ring-1 ring-[rgb(var(--border))]/70",
-        "shadow-sm hover:shadow-md",
-        "hover:bg-[rgb(var(--card-2))]",
-        "inline-flex items-center justify-center gap-2 text-sm font-medium",
-      ].join(" ")}
+      className={secondaryButtonClasses}
     >
       {provider === "google" ? <GoogleIcon /> : <Facebook className="h-4 w-4" />}
       {label}
