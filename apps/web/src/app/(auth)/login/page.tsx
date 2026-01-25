@@ -7,9 +7,9 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 
-import { AuthShell } from "@/app/components/auth/AuthShell";
-import { FloatingInput } from "@/app/components/ui/FloatingInput";
-import { OAuthButton, PrimaryButton } from "@/app/components/ui/Buttons";
+import { AuthShell } from "@/components/auth/AuthShell";
+import { FloatingInput } from "@/components/ui/FloatingInput";
+import { OAuthButton, PrimaryButton } from "@/components/ui/Buttons";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL!;
 
@@ -21,7 +21,13 @@ const schema = z.object({
 type FormValues = z.infer<typeof schema>;
 
 function parseErr(data: any) {
-  return data?.detail?.error || data?.detail?.message || data?.detail || data?.error || "Login failed";
+  return (
+    data?.detail?.error ||
+    data?.detail?.message ||
+    data?.detail ||
+    data?.error ||
+    "Login failed"
+  );
 }
 
 export default function LoginPage() {
@@ -31,11 +37,9 @@ export default function LoginPage() {
     mode: "onChange",
   });
 
-  const { watch, formState, handleSubmit } = form;
-  const email = watch("email");
-  const password = watch("password");
+  const v = form.watch();
 
-  const onSubmit = handleSubmit(async (values) => {
+  const onSubmit = form.handleSubmit(async (values) => {
     const t = toast.loading("Signing in…");
     try {
       const res = await fetch(`${API_URL}/auth/login`, {
@@ -43,10 +47,15 @@ export default function LoginPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(values),
       });
+
       const data = await res.json();
       if (!res.ok) throw new Error(parseErr(data));
 
-      localStorage.setItem("tenue_tokens", JSON.stringify({ access: data.access_token, refresh: data.refresh_token }));
+      localStorage.setItem(
+        "tenue_tokens",
+        JSON.stringify({ access: data.access_token, refresh: data.refresh_token })
+      );
+
       toast.success("Welcome back.", { id: t });
       window.location.href = "/me";
     } catch (e: any) {
@@ -65,48 +74,61 @@ export default function LoginPage() {
       >
         <FloatingInput
           label="Email"
-          value={email}
-          onChange={(e) => form.setValue("email", e.target.value, { shouldValidate: true })}
+          value={v.email}
+          onChange={(e) =>
+            form.setValue("email", e.target.value, { shouldValidate: true })
+          }
           onBlur={() => form.trigger("email")}
           autoComplete="email"
-          error={formState.errors.email?.message}
+          error={form.formState.errors.email?.message}
         />
 
         <FloatingInput
           label="Password"
           type="password"
-          value={password}
-          onChange={(e) => form.setValue("password", e.target.value, { shouldValidate: true })}
+          value={v.password}
+          onChange={(e) =>
+            form.setValue("password", e.target.value, { shouldValidate: true })
+          }
           onBlur={() => form.trigger("password")}
           autoComplete="current-password"
-          error={formState.errors.password?.message}
+          error={form.formState.errors.password?.message}
         />
 
         <div className="flex items-center justify-end">
-          <button type="button" className="text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-white">
+          <button
+            type="button"
+            className="text-xs text-[rgb(var(--muted))] hover:text-[rgb(var(--fg))]"
+            onClick={() => toast.message("Forgot password (Sprint 2).")}
+          >
             Forgot password?
           </button>
         </div>
 
-        <PrimaryButton disabled={!formState.isValid || formState.isSubmitting}>
-          {formState.isSubmitting ? "Signing in…" : "Sign in"}
+        <PrimaryButton disabled={!form.formState.isValid || form.formState.isSubmitting}>
+          {form.formState.isSubmitting ? "Signing in…" : "Sign in"}
         </PrimaryButton>
 
         <div className="relative my-1">
           <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-zinc-200 dark:border-zinc-800" />
+            <div className="w-full border-t border-[rgb(var(--border))]" />
           </div>
           <div className="relative flex justify-center text-xs">
-            <span className="bg-white px-2 text-zinc-400 dark:bg-zinc-950">or</span>
+            <span className="bg-[rgb(var(--surface))] px-2 text-[rgb(var(--muted))]">
+              or
+            </span>
           </div>
         </div>
 
         <OAuthButton provider="google" onClick={() => toast.message("OAuth later (Sprint 2).")} />
         <OAuthButton provider="facebook" onClick={() => toast.message("OAuth later (Sprint 2).")} />
 
-        <div className="text-center text-xs text-zinc-500">
+        <div className="text-center text-xs text-[rgb(var(--muted))]">
           Don’t have an account?{" "}
-          <Link className="text-zinc-900 underline underline-offset-4 dark:text-white" href="/register">
+          <Link
+            className="text-[rgb(var(--fg))] underline underline-offset-4"
+            href="/register"
+          >
             Sign up
           </Link>
         </div>
