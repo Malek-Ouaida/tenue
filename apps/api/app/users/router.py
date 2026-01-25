@@ -3,27 +3,30 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import require_user_id, require_user_with_profile  # see note below
+from app.auth.dependencies import require_user_id  # see note below
 from app.deps import get_db
 from app.users.schemas import UserProfileOut, UserProfileUpdateIn
 from app.users.service import (
     ProfileError,
     _UNSET,
-    get_or_create_my_profile,
-    get_public_profile_by_username,
+    get_follow_counts,
+    get_my_profile_with_counts,
+    get_public_profile_with_counts_by_username,
     update_my_profile,
 )
 
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-def _to_out(p) -> UserProfileOut:
+def _to_out(p, followers_count: int, following_count: int) -> UserProfileOut:
     return UserProfileOut(
         user_id=str(p.user_id),
         username=p.username,
         display_name=p.display_name,
         bio=p.bio,
         avatar_key=p.avatar_key,
+        followers_count=followers_count,
+        following_count=following_count,
     )
 
 
@@ -32,8 +35,8 @@ def me(
     user_id=Depends(require_user_id),
     db: Session = Depends(get_db),
 ) -> UserProfileOut:
-    prof = get_or_create_my_profile(db, user_id)
-    return _to_out(prof)
+    prof, followers_count, following_count = get_my_profile_with_counts(db, user_id)
+    return _to_out(prof, followers_count, following_count)
 
 
 @router.patch("/me", response_model=UserProfileOut)
@@ -59,13 +62,15 @@ def update_me(
             detail={"code": e.code, "message": e.message},
         )
 
-    return _to_out(prof)
+    followers_count, following_count = get_follow_counts(db, prof.user_id)
+    return _to_out(prof, followers_count, following_count)
 
 
 # IMPORTANT: keep this AFTER static routes like /me, /search (in follow router) etc.
 @router.get("/{username}", response_model=UserProfileOut)
 def public_profile(username: str, db: Session = Depends(get_db)) -> UserProfileOut:
-    prof = get_public_profile_by_username(db, username)
-    if not prof:
+    result = get_public_profile_with_counts_by_username(db, username)
+    if not result:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    return _to_out(prof)
+    prof, followers_count, following_count = result
+    return _to_out(prof, followers_count, following_count)
