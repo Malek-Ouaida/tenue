@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import Image from "next/image";
 import { Grid3X3, Bookmark, Share2, Settings } from "lucide-react";
 
-import { apiFetch, clearTokens, ApiError } from "@/lib/api";
+import { apiFetch, clearTokens, ApiError, getErrorMessage } from "@/lib/api";
 
 type Me = {
   user_id: string;
@@ -42,7 +42,7 @@ export default function MePage() {
         const data = await apiFetch<Me>("/users/me", { auth: true, cache: "no-store" });
         if (!active) return;
         setMe(data);
-      } catch (e: any) {
+      } catch (e: unknown) {
         if (!active) return;
         setMe(null);
         if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
@@ -52,7 +52,7 @@ export default function MePage() {
           return;
         }
 
-        const message = e?.message || "Failed to load profile.";
+        const message = getErrorMessage(e, "Failed to load profile.");
         setError(message);
         toast.error(message);
       } finally {

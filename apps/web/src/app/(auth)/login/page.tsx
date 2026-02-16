@@ -12,7 +12,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { AuthShell } from "@/components/auth/AuthShell";
 import { FloatingInput } from "@/components/ui/FloatingInput";
 import { OAuthButton, PrimaryButton } from "@/components/ui/Buttons";
-import { apiFetch, setTokens } from "@/lib/api";
+import { apiFetch, getErrorMessage, setTokens } from "@/lib/api";
 
 const schema = z.object({
   email: z.string().email("Enter a valid email"),
@@ -50,8 +50,8 @@ export default function LoginPage() {
 
       toast.success("Welcome back.", { id: t });
       router.push("/app/me");
-    } catch (e: any) {
-      toast.error(e.message, { id: t });
+    } catch (e: unknown) {
+      toast.error(getErrorMessage(e, "Failed to sign in."), { id: t });
     }
   });
 

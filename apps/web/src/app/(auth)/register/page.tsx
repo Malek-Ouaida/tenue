@@ -12,7 +12,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { AuthShell } from "@/components/auth/AuthShell";
 import { FloatingInput } from "@/components/ui/FloatingInput";
 import { PrimaryButton } from "@/components/ui/Buttons";
-import { apiFetch, setTokens } from "@/lib/api";
+import { apiFetch, getErrorMessage, setTokens } from "@/lib/api";
 
 const schema = z.object({
   email: z.string().email("Enter a valid email"),
@@ -61,8 +61,8 @@ export default function RegisterPage() {
 
       toast.success("Account created.", { id: t });
       router.push("/app/me");
-    } catch (e: any) {
-      toast.error(e.message, { id: t });
+    } catch (e: unknown) {
+      toast.error(getErrorMessage(e, "Failed to create account."), { id: t });
     }
   });
 
@@ -114,7 +114,7 @@ export default function RegisterPage() {
           }
           onBlur={() => form.trigger("display_name")}
           autoComplete="name"
-          error={form.formState.errors.display_name?.message as any}
+          error={form.formState.errors.display_name?.message as string | undefined}
         />
 
         <FloatingInput
