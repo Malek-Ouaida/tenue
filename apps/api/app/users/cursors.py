@@ -6,32 +6,24 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-
-class CursorError(ValueError):
-    pass
+from app.pagination import (
+    CursorError,
+    CreatedAtIdCursor,
+    decode_created_at_id_cursor,
+    encode_created_at_id_cursor,
+)
 
 
 # ---- Follows cursor: (created_at, id) ----
-@dataclass(frozen=True)
-class FollowsCursor:
-    created_at: datetime
-    id: UUID
+FollowsCursor = CreatedAtIdCursor
 
 
 def encode_follows_cursor(created_at: datetime, row_id: UUID) -> str:
-    payload = {"created_at": created_at.isoformat(), "id": str(row_id)}
-    raw = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
-    return base64.urlsafe_b64encode(raw).decode("utf-8").rstrip("=")
+    return encode_created_at_id_cursor(created_at, row_id)
 
 
 def decode_follows_cursor(cursor: str) -> FollowsCursor:
-    try:
-        padded = cursor + "=" * (-len(cursor) % 4)
-        raw = base64.urlsafe_b64decode(padded.encode("utf-8")).decode("utf-8")
-        obj = json.loads(raw)
-        return FollowsCursor(created_at=datetime.fromisoformat(obj["created_at"]), id=UUID(obj["id"]))
-    except Exception as e:
-        raise CursorError("invalid_cursor") from e
+    return decode_created_at_id_cursor(cursor)
 
 
 # ---- User search cursor: (username, user_id) ----
