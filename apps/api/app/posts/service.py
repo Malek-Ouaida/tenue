@@ -319,6 +319,116 @@ def unsave_post(db: Session, *, post_id: uuid.UUID, viewer_user_id: uuid.UUID) -
     return _engagement_snapshot(db, post_id=post_id, viewer_user_id=viewer_user_id)
 
 
+def create_comment(
+    db: Session,
+    *,
+    post_id: uuid.UUID,
+    viewer_user_id: uuid.UUID,
+    body: str,
+) -> dict[str, Any]:
+    _ensure_post_exists(db, post_id=post_id)
+
+    comment = PostComment(
+        id=uuid.uuid4(),
+        post_id=post_id,
+        user_id=viewer_user_id,
+        body=body.strip(),
+    )
+    db.add(comment)
+    try:
+        db.commit()
+        db.refresh(comment)
+    except IntegrityError as e:
+        db.rollback()
+        _ensure_post_exists(db, post_id=post_id)
+        raise PostError(code="comment_create_failed") from e
+
+    profile = db.execute(
+        select(UserProfile).where(UserProfile.user_id == viewer_user_id).limit(1)
+    ).scalar_one_or_none()
+    if not profile:
+        raise PostError(code="author_profile_missing")
+
+    return {
+        "id": str(comment.id),
+        "post_id": str(comment.post_id),
+        "created_at": comment.created_at,
+        "body": comment.body,
+        "author": {
+            "username": profile.username,
+            "display_name": profile.display_name,
+            "avatar_url": _public_url_for_key(profile.avatar_key),
+        },
+        "can_delete": True,
+    }
+
+
+def list_comments(
+    db: Session,
+    *,
+    post_id: uuid.UUID,
+    viewer_user_id: uuid.UUID,
+    cursor: str | None,
+    limit: int,
+) -> tuple[list[dict[str, Any]], str | None]:
+    if limit < 1 or limit > 50:
+        raise PostError(code="limit_out_of_range")
+    _ensure_post_exists(db, post_id=post_id)
+
+    cur = _decode_cursor(cursor)
+
+    stmt = (
+        select(PostComment, UserProfile)
+        .join(UserProfile, UserProfile.user_id == PostComment.user_id)
+        .where(PostComment.post_id == post_id)
+    )
+
+    if cur:
+        stmt = stmt.where(
+            (PostComment.created_at < cur.created_at)
+            | ((PostComment.created_at == cur.created_at) & (PostComment.id < cur.id))
+        )
+
+    stmt = stmt.order_by(desc(PostComment.created_at), desc(PostComment.id)).limit(limit + 1)
+    rows = db.execute(stmt).all()
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+
+    items = [
+        {
+            "id": str(comment.id),
+            "post_id": str(comment.post_id),
+            "created_at": comment.created_at,
+            "body": comment.body,
+            "author": {
+                "username": profile.username,
+                "display_name": profile.display_name,
+                "avatar_url": _public_url_for_key(profile.avatar_key),
+            },
+            "can_delete": comment.user_id == viewer_user_id,
+        }
+        for comment, profile in rows
+    ]
+
+    next_cursor = None
+    if has_more and rows:
+        last_comment = rows[-1][0]
+        next_cursor = encode_created_at_id_cursor(last_comment.created_at, last_comment.id)
+
+    return items, next_cursor
+
+
+def delete_comment(db: Session, *, comment_id: uuid.UUID, viewer_user_id: uuid.UUID) -> None:
+    comment = db.execute(select(PostComment).where(PostComment.id == comment_id).limit(1)).scalar_one_or_none()
+    if not comment:
+        raise PostError(code="comment_not_found")
+    if comment.user_id != viewer_user_id:
+        raise PostError(code="forbidden")
+
+    db.delete(comment)
+    db.commit()
+
+
 def get_following_feed(
     db: Session,
     *,

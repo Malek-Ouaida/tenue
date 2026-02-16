@@ -9,8 +9,11 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import require_user_id
 from app.deps import get_db
 from app.posts.schemas import (
+    PaginatedCommentsOut,
     PaginatedPostsOut,
     PostActionOut,
+    PostCommentCreateIn,
+    PostCommentOut,
     PostCreateIn,
     PostEngagementOut,
     PostOut,
@@ -18,13 +21,16 @@ from app.posts.schemas import (
 from app.posts.service import (
     CreatePostMediaItem,
     PostError,
+    create_comment,
     create_post,
+    delete_comment,
     delete_post,
     get_explore_feed,
     get_following_feed,
     get_post_detail,
     get_profile_posts,
     like_post,
+    list_comments,
     save_post,
     unlike_post,
     unsave_post,
@@ -53,6 +59,7 @@ def _raise_post_error(err: PostError) -> None:
         "limit_out_of_range": status.HTTP_400_BAD_REQUEST,
         "invalid_explore_mode": status.HTTP_400_BAD_REQUEST,
         "post_not_found": status.HTTP_404_NOT_FOUND,
+        "comment_not_found": status.HTTP_404_NOT_FOUND,
         "user_not_found": status.HTTP_404_NOT_FOUND,
         "forbidden": status.HTTP_403_FORBIDDEN,
     }
@@ -213,6 +220,62 @@ def unsave_post_route(
         post_uuid = _parse_uuid(post_id, field="post_id")
         payload = unsave_post(db, post_id=post_uuid, viewer_user_id=viewer_user_id)
         return PostEngagementOut.model_validate(payload)
+    except PostError as err:
+        _raise_post_error(err)
+
+
+@router.post("/posts/{post_id}/comments", response_model=PostCommentOut, status_code=status.HTTP_201_CREATED)
+def create_comment_route(
+    post_id: str,
+    payload: PostCommentCreateIn,
+    db: Annotated[Session, Depends(get_db)],
+    viewer_user_id: Annotated[uuid.UUID, Depends(require_user_id)],
+) -> PostCommentOut:
+    try:
+        post_uuid = _parse_uuid(post_id, field="post_id")
+        created = create_comment(
+            db,
+            post_id=post_uuid,
+            viewer_user_id=viewer_user_id,
+            body=payload.body,
+        )
+        return PostCommentOut.model_validate(created)
+    except PostError as err:
+        _raise_post_error(err)
+
+
+@router.get("/posts/{post_id}/comments", response_model=PaginatedCommentsOut)
+def list_comments_route(
+    post_id: str,
+    db: Annotated[Session, Depends(get_db)],
+    viewer_user_id: Annotated[uuid.UUID, Depends(require_user_id)],
+    cursor: str | None = Query(None),
+    limit: int = Query(20, ge=1, le=50),
+) -> PaginatedCommentsOut:
+    try:
+        post_uuid = _parse_uuid(post_id, field="post_id")
+        items, next_cursor = list_comments(
+            db,
+            post_id=post_uuid,
+            viewer_user_id=viewer_user_id,
+            cursor=cursor,
+            limit=limit,
+        )
+        return PaginatedCommentsOut.model_validate({"items": items, "next_cursor": next_cursor})
+    except PostError as err:
+        _raise_post_error(err)
+
+
+@router.delete("/comments/{comment_id}", response_model=PostActionOut)
+def delete_comment_route(
+    comment_id: str,
+    db: Annotated[Session, Depends(get_db)],
+    viewer_user_id: Annotated[uuid.UUID, Depends(require_user_id)],
+) -> PostActionOut:
+    try:
+        comment_uuid = _parse_uuid(comment_id, field="comment_id")
+        delete_comment(db, comment_id=comment_uuid, viewer_user_id=viewer_user_id)
+        return PostActionOut(ok=True)
     except PostError as err:
         _raise_post_error(err)
 
