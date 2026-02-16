@@ -6,7 +6,10 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from app.audit import audit_log
 from app.auth.dependencies import require_user_id
+from app.auth.rate_limit import enforce_user_rate_limit
+from app.config import get_settings
 from app.deps import get_db
 from app.users.follow_schemas import FollowActionResponse, PaginatedProfiles, RelationshipResponse
 from app.users.follow_service import (
@@ -21,6 +24,7 @@ from app.users.follow_service import (
 )
 
 router = APIRouter(prefix="/users", tags=["users"])
+settings = get_settings()
 
 
 def _err(code: str, http_status: int = 400):
@@ -48,9 +52,22 @@ def follow_user(
     db: Annotated[Session, Depends(get_db)],
     me_user_id: Annotated[uuid.UUID, Depends(require_user_id)],
 ):
+    enforce_user_rate_limit(
+        user_id=me_user_id,
+        action="users:follow_toggle",
+        limit=settings.rate_limit_follow_toggle_user_per_min,
+        ttl_seconds=60,
+    )
+
     try:
         target = resolve_user_by_username(db, username)
         status_str = follow(db, me_user_id=me_user_id, target_user_id=target.id)
+        audit_log(
+            action="follow.create",
+            actor_user_id=str(me_user_id),
+            target_id=str(target.id),
+            details={"status": status_str},
+        )
         return FollowActionResponse(ok=True, status=status_str)
     except FollowError as e:
         if e.code == "user_not_found":
@@ -64,9 +81,22 @@ def unfollow_user(
     db: Annotated[Session, Depends(get_db)],
     me_user_id: Annotated[uuid.UUID, Depends(require_user_id)],
 ):
+    enforce_user_rate_limit(
+        user_id=me_user_id,
+        action="users:follow_toggle",
+        limit=settings.rate_limit_follow_toggle_user_per_min,
+        ttl_seconds=60,
+    )
+
     try:
         target = resolve_user_by_username(db, username)
         status_str = unfollow(db, me_user_id=me_user_id, target_user_id=target.id)
+        audit_log(
+            action="follow.delete",
+            actor_user_id=str(me_user_id),
+            target_id=str(target.id),
+            details={"status": status_str},
+        )
         return FollowActionResponse(ok=True, status=status_str)
     except FollowError as e:
         if e.code == "user_not_found":

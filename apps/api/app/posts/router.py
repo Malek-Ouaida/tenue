@@ -6,7 +6,10 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from app.audit import audit_log
 from app.auth.dependencies import require_user_id
+from app.auth.rate_limit import enforce_user_rate_limit
+from app.config import get_settings
 from app.deps import get_db
 from app.posts.schemas import (
     PaginatedCommentsOut,
@@ -37,6 +40,7 @@ from app.posts.service import (
 )
 
 router = APIRouter(tags=["posts"])
+settings = get_settings()
 
 
 def _parse_uuid(value: str, *, field: str) -> uuid.UUID:
@@ -73,6 +77,13 @@ def create_post_route(
     db: Annotated[Session, Depends(get_db)],
     viewer_user_id: Annotated[uuid.UUID, Depends(require_user_id)],
 ) -> PostOut:
+    enforce_user_rate_limit(
+        user_id=viewer_user_id,
+        action="posts:create",
+        limit=settings.rate_limit_post_create_user_per_min,
+        ttl_seconds=60,
+    )
+
     try:
         created = create_post(
             db,
@@ -87,6 +98,12 @@ def create_post_route(
                 )
                 for item in payload.media
             ],
+        )
+        audit_log(
+            action="post.create",
+            actor_user_id=str(viewer_user_id),
+            target_id=created["id"],
+            details={"media_count": len(payload.media)},
         )
         return PostOut.model_validate(created)
     except PostError as err:
@@ -174,9 +191,21 @@ def like_post_route(
     db: Annotated[Session, Depends(get_db)],
     viewer_user_id: Annotated[uuid.UUID, Depends(require_user_id)],
 ) -> PostEngagementOut:
+    enforce_user_rate_limit(
+        user_id=viewer_user_id,
+        action="posts:reaction",
+        limit=settings.rate_limit_reaction_toggle_user_per_min,
+        ttl_seconds=60,
+    )
+
     try:
         post_uuid = _parse_uuid(post_id, field="post_id")
         payload = like_post(db, post_id=post_uuid, viewer_user_id=viewer_user_id)
+        audit_log(
+            action="post.like",
+            actor_user_id=str(viewer_user_id),
+            target_id=str(post_uuid),
+        )
         return PostEngagementOut.model_validate(payload)
     except PostError as err:
         _raise_post_error(err)
@@ -188,9 +217,21 @@ def unlike_post_route(
     db: Annotated[Session, Depends(get_db)],
     viewer_user_id: Annotated[uuid.UUID, Depends(require_user_id)],
 ) -> PostEngagementOut:
+    enforce_user_rate_limit(
+        user_id=viewer_user_id,
+        action="posts:reaction",
+        limit=settings.rate_limit_reaction_toggle_user_per_min,
+        ttl_seconds=60,
+    )
+
     try:
         post_uuid = _parse_uuid(post_id, field="post_id")
         payload = unlike_post(db, post_id=post_uuid, viewer_user_id=viewer_user_id)
+        audit_log(
+            action="post.unlike",
+            actor_user_id=str(viewer_user_id),
+            target_id=str(post_uuid),
+        )
         return PostEngagementOut.model_validate(payload)
     except PostError as err:
         _raise_post_error(err)
@@ -202,9 +243,21 @@ def save_post_route(
     db: Annotated[Session, Depends(get_db)],
     viewer_user_id: Annotated[uuid.UUID, Depends(require_user_id)],
 ) -> PostEngagementOut:
+    enforce_user_rate_limit(
+        user_id=viewer_user_id,
+        action="posts:reaction",
+        limit=settings.rate_limit_reaction_toggle_user_per_min,
+        ttl_seconds=60,
+    )
+
     try:
         post_uuid = _parse_uuid(post_id, field="post_id")
         payload = save_post(db, post_id=post_uuid, viewer_user_id=viewer_user_id)
+        audit_log(
+            action="post.save",
+            actor_user_id=str(viewer_user_id),
+            target_id=str(post_uuid),
+        )
         return PostEngagementOut.model_validate(payload)
     except PostError as err:
         _raise_post_error(err)
@@ -216,9 +269,21 @@ def unsave_post_route(
     db: Annotated[Session, Depends(get_db)],
     viewer_user_id: Annotated[uuid.UUID, Depends(require_user_id)],
 ) -> PostEngagementOut:
+    enforce_user_rate_limit(
+        user_id=viewer_user_id,
+        action="posts:reaction",
+        limit=settings.rate_limit_reaction_toggle_user_per_min,
+        ttl_seconds=60,
+    )
+
     try:
         post_uuid = _parse_uuid(post_id, field="post_id")
         payload = unsave_post(db, post_id=post_uuid, viewer_user_id=viewer_user_id)
+        audit_log(
+            action="post.unsave",
+            actor_user_id=str(viewer_user_id),
+            target_id=str(post_uuid),
+        )
         return PostEngagementOut.model_validate(payload)
     except PostError as err:
         _raise_post_error(err)
@@ -231,6 +296,13 @@ def create_comment_route(
     db: Annotated[Session, Depends(get_db)],
     viewer_user_id: Annotated[uuid.UUID, Depends(require_user_id)],
 ) -> PostCommentOut:
+    enforce_user_rate_limit(
+        user_id=viewer_user_id,
+        action="posts:comment_create",
+        limit=settings.rate_limit_comment_create_user_per_min,
+        ttl_seconds=60,
+    )
+
     try:
         post_uuid = _parse_uuid(post_id, field="post_id")
         created = create_comment(
@@ -238,6 +310,12 @@ def create_comment_route(
             post_id=post_uuid,
             viewer_user_id=viewer_user_id,
             body=payload.body,
+        )
+        audit_log(
+            action="post.comment_create",
+            actor_user_id=str(viewer_user_id),
+            target_id=created["id"],
+            details={"post_id": str(post_uuid)},
         )
         return PostCommentOut.model_validate(created)
     except PostError as err:
@@ -275,6 +353,11 @@ def delete_comment_route(
     try:
         comment_uuid = _parse_uuid(comment_id, field="comment_id")
         delete_comment(db, comment_id=comment_uuid, viewer_user_id=viewer_user_id)
+        audit_log(
+            action="post.comment_delete",
+            actor_user_id=str(viewer_user_id),
+            target_id=str(comment_uuid),
+        )
         return PostActionOut(ok=True)
     except PostError as err:
         _raise_post_error(err)
@@ -289,6 +372,11 @@ def delete_post_route(
     try:
         post_uuid = _parse_uuid(post_id, field="post_id")
         delete_post(db, post_id=post_uuid, viewer_user_id=viewer_user_id)
+        audit_log(
+            action="post.delete",
+            actor_user_id=str(viewer_user_id),
+            target_id=str(post_uuid),
+        )
         return PostActionOut(ok=True)
     except PostError as err:
         _raise_post_error(err)
