@@ -3,18 +3,21 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_user_id
 from app.deps import get_db
-from app.posts.schemas import PostActionOut, PostCreateIn, PostOut
+from app.posts.schemas import PaginatedPostsOut, PostActionOut, PostCreateIn, PostOut
 from app.posts.service import (
     CreatePostMediaItem,
     PostError,
     create_post,
     delete_post,
+    get_explore_feed,
+    get_following_feed,
     get_post_detail,
+    get_profile_posts,
 )
 
 router = APIRouter(tags=["posts"])
@@ -36,7 +39,11 @@ def _raise_post_error(err: PostError) -> None:
         "media_required": status.HTTP_400_BAD_REQUEST,
         "duplicate_media_order": status.HTTP_400_BAD_REQUEST,
         "post_create_failed": status.HTTP_400_BAD_REQUEST,
+        "invalid_cursor": status.HTTP_400_BAD_REQUEST,
+        "limit_out_of_range": status.HTTP_400_BAD_REQUEST,
+        "invalid_explore_mode": status.HTTP_400_BAD_REQUEST,
         "post_not_found": status.HTTP_404_NOT_FOUND,
+        "user_not_found": status.HTTP_404_NOT_FOUND,
         "forbidden": status.HTTP_403_FORBIDDEN,
     }
     http_status = mapping.get(err.code, status.HTTP_400_BAD_REQUEST)
@@ -65,6 +72,67 @@ def create_post_route(
             ],
         )
         return PostOut.model_validate(created)
+    except PostError as err:
+        _raise_post_error(err)
+
+
+@router.get("/feed", response_model=PaginatedPostsOut)
+def following_feed_route(
+    db: Annotated[Session, Depends(get_db)],
+    viewer_user_id: Annotated[uuid.UUID, Depends(require_user_id)],
+    cursor: str | None = Query(None),
+    limit: int = Query(20, ge=1, le=50),
+) -> PaginatedPostsOut:
+    try:
+        items, next_cursor = get_following_feed(
+            db,
+            viewer_user_id=viewer_user_id,
+            cursor=cursor,
+            limit=limit,
+        )
+        return PaginatedPostsOut.model_validate({"items": items, "next_cursor": next_cursor})
+    except PostError as err:
+        _raise_post_error(err)
+
+
+@router.get("/explore", response_model=PaginatedPostsOut)
+def explore_feed_route(
+    db: Annotated[Session, Depends(get_db)],
+    viewer_user_id: Annotated[uuid.UUID, Depends(require_user_id)],
+    mode: str = Query("recent"),
+    cursor: str | None = Query(None),
+    limit: int = Query(20, ge=1, le=50),
+) -> PaginatedPostsOut:
+    try:
+        items, next_cursor = get_explore_feed(
+            db,
+            viewer_user_id=viewer_user_id,
+            cursor=cursor,
+            limit=limit,
+            mode=mode,
+        )
+        return PaginatedPostsOut.model_validate({"items": items, "next_cursor": next_cursor})
+    except PostError as err:
+        _raise_post_error(err)
+
+
+@router.get("/users/{username}/posts", response_model=PaginatedPostsOut)
+def profile_posts_route(
+    username: str,
+    db: Annotated[Session, Depends(get_db)],
+    viewer_user_id: Annotated[uuid.UUID, Depends(require_user_id)],
+    cursor: str | None = Query(None),
+    limit: int = Query(20, ge=1, le=50),
+) -> PaginatedPostsOut:
+    try:
+        items, next_cursor = get_profile_posts(
+            db,
+            username=username,
+            viewer_user_id=viewer_user_id,
+            cursor=cursor,
+            limit=limit,
+        )
+        return PaginatedPostsOut.model_validate({"items": items, "next_cursor": next_cursor})
     except PostError as err:
         _raise_post_error(err)
 

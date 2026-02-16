@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, desc, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -16,7 +16,9 @@ from app.models.post_comment import PostComment
 from app.models.post_like import PostLike
 from app.models.post_media import PostMedia
 from app.models.post_save import PostSave
+from app.models.user_follow import UserFollow
 from app.models.user_profile import UserProfile
+from app.pagination import CursorError, decode_created_at_id_cursor, encode_created_at_id_cursor
 
 settings = get_settings()
 
@@ -149,6 +151,48 @@ def _serialize_posts(db: Session, posts: Sequence[Post], viewer_user_id: uuid.UU
     return payload
 
 
+def _decode_cursor(cursor: str | None):
+    if not cursor:
+        return None
+    try:
+        return decode_created_at_id_cursor(cursor)
+    except CursorError as e:
+        raise PostError(code="invalid_cursor") from e
+
+
+def _paginate_posts(
+    db: Session,
+    *,
+    base_stmt,
+    viewer_user_id: uuid.UUID,
+    cursor: str | None,
+    limit: int,
+) -> tuple[list[dict[str, Any]], str | None]:
+    if limit < 1 or limit > 50:
+        raise PostError(code="limit_out_of_range")
+
+    cur = _decode_cursor(cursor)
+
+    stmt = base_stmt
+    if cur:
+        stmt = stmt.where(
+            (Post.created_at < cur.created_at)
+            | ((Post.created_at == cur.created_at) & (Post.id < cur.id))
+        )
+
+    stmt = stmt.order_by(desc(Post.created_at), desc(Post.id)).limit(limit + 1)
+    rows = db.execute(stmt).scalars().all()
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+
+    next_cursor = None
+    if has_more and rows:
+        last = rows[-1]
+        next_cursor = encode_created_at_id_cursor(last.created_at, last.id)
+
+    return _serialize_posts(db, rows, viewer_user_id), next_cursor
+
+
 def create_post(
     db: Session,
     *,
@@ -192,6 +236,76 @@ def create_post(
         raise PostError(code="post_create_failed") from e
 
     return get_post_detail(db, post_id=post.id, viewer_user_id=viewer_user_id)
+
+
+def get_following_feed(
+    db: Session,
+    *,
+    viewer_user_id: uuid.UUID,
+    cursor: str | None,
+    limit: int,
+) -> tuple[list[dict[str, Any]], str | None]:
+    followed_subquery = select(UserFollow.following_user_id).where(
+        UserFollow.follower_user_id == viewer_user_id
+    )
+    base_stmt = select(Post).where(
+        or_(
+            Post.author_id == viewer_user_id,
+            Post.author_id.in_(followed_subquery),
+        )
+    )
+    return _paginate_posts(
+        db,
+        base_stmt=base_stmt,
+        viewer_user_id=viewer_user_id,
+        cursor=cursor,
+        limit=limit,
+    )
+
+
+def get_explore_feed(
+    db: Session,
+    *,
+    viewer_user_id: uuid.UUID,
+    cursor: str | None,
+    limit: int,
+    mode: str = "recent",
+) -> tuple[list[dict[str, Any]], str | None]:
+    if mode not in {"recent", "trending"}:
+        raise PostError(code="invalid_explore_mode")
+
+    # "trending" intentionally falls back to recent for now.
+    base_stmt = select(Post)
+    return _paginate_posts(
+        db,
+        base_stmt=base_stmt,
+        viewer_user_id=viewer_user_id,
+        cursor=cursor,
+        limit=limit,
+    )
+
+
+def get_profile_posts(
+    db: Session,
+    *,
+    username: str,
+    viewer_user_id: uuid.UUID,
+    cursor: str | None,
+    limit: int,
+) -> tuple[list[dict[str, Any]], str | None]:
+    normalized = username.strip().lower()
+    profile = db.execute(select(UserProfile).where(UserProfile.username == normalized).limit(1)).scalar_one_or_none()
+    if not profile:
+        raise PostError(code="user_not_found")
+
+    base_stmt = select(Post).where(Post.author_id == profile.user_id)
+    return _paginate_posts(
+        db,
+        base_stmt=base_stmt,
+        viewer_user_id=viewer_user_id,
+        cursor=cursor,
+        limit=limit,
+    )
 
 
 def get_post_detail(db: Session, *, post_id: uuid.UUID, viewer_user_id: uuid.UUID) -> dict[str, Any]:
