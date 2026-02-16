@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Optional
+import uuid
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -29,14 +30,14 @@ def _err(code: str, http_status: int = 400):
 # ✅ STATIC ROUTE FIRST so it never gets swallowed by /{username}
 @router.get("/search", response_model=PaginatedProfiles)
 def users_search(
+    db: Annotated[Session, Depends(get_db)],
     q: str = Query(..., min_length=1, max_length=50),
     limit: int = Query(20, ge=1, le=50),
-    cursor: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
+    cursor: str | None = Query(None),
 ):
     try:
         items, next_cursor = search_users(db, q=q, limit=limit, cursor=cursor)
-        return PaginatedProfiles(items=items, nextCursor=next_cursor)
+        return PaginatedProfiles(items=items, next_cursor=next_cursor)
     except FollowError as e:
         _err(e.code, 400)
 
@@ -44,8 +45,8 @@ def users_search(
 @router.post("/{username}/follow", response_model=FollowActionResponse)
 def follow_user(
     username: str,
-    db: Session = Depends(get_db),
-    me_user_id=Depends(require_user_id),
+    db: Annotated[Session, Depends(get_db)],
+    me_user_id: Annotated[uuid.UUID, Depends(require_user_id)],
 ):
     try:
         target = resolve_user_by_username(db, username)
@@ -60,8 +61,8 @@ def follow_user(
 @router.delete("/{username}/follow", response_model=FollowActionResponse)
 def unfollow_user(
     username: str,
-    db: Session = Depends(get_db),
-    me_user_id=Depends(require_user_id),
+    db: Annotated[Session, Depends(get_db)],
+    me_user_id: Annotated[uuid.UUID, Depends(require_user_id)],
 ):
     try:
         target = resolve_user_by_username(db, username)
@@ -76,8 +77,8 @@ def unfollow_user(
 @router.get("/{username}/relationship", response_model=RelationshipResponse)
 def relationship_user(
     username: str,
-    db: Session = Depends(get_db),
-    me_user_id=Depends(require_user_id),
+    db: Annotated[Session, Depends(get_db)],
+    me_user_id: Annotated[uuid.UUID, Depends(require_user_id)],
 ):
     try:
         target = resolve_user_by_username(db, username)
@@ -92,14 +93,14 @@ def relationship_user(
 @router.get("/{username}/followers", response_model=PaginatedProfiles)
 def followers_list(
     username: str,
+    db: Annotated[Session, Depends(get_db)],
     limit: int = Query(20, ge=1, le=50),
-    cursor: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
+    cursor: str | None = Query(None),
 ):
     try:
         target = resolve_user_by_username(db, username)
         items, next_cursor = list_followers(db, user_id=target.id, limit=limit, cursor=cursor)
-        return PaginatedProfiles(items=items, nextCursor=next_cursor)
+        return PaginatedProfiles(items=items, next_cursor=next_cursor)
     except FollowError as e:
         if e.code == "user_not_found":
             _err(e.code, 404)
@@ -109,14 +110,14 @@ def followers_list(
 @router.get("/{username}/following", response_model=PaginatedProfiles)
 def following_list(
     username: str,
+    db: Annotated[Session, Depends(get_db)],
     limit: int = Query(20, ge=1, le=50),
-    cursor: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
+    cursor: str | None = Query(None),
 ):
     try:
         target = resolve_user_by_username(db, username)
         items, next_cursor = list_following(db, user_id=target.id, limit=limit, cursor=cursor)
-        return PaginatedProfiles(items=items, nextCursor=next_cursor)
+        return PaginatedProfiles(items=items, next_cursor=next_cursor)
     except FollowError as e:
         if e.code == "user_not_found":
             _err(e.code, 404)
