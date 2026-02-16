@@ -10,10 +10,11 @@ from sqlalchemy import text
 from app.auth.router import router as auth_router
 from app.config import get_settings
 from app.db import engine
+from app.posts.router import router as posts_router
 from app.redis_client import redis_client
 from app.s3_client import s3_client
-from app.users.router import router as users_router
 from app.users.follow_routes import router as follow_router
+from app.users.router import router as users_router
 
 settings = get_settings()
 
@@ -35,6 +36,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(follow_router)
 app.include_router(users_router)
+app.include_router(posts_router)
 
 @app.get("/health")
 def health() -> dict[str, Any]:
