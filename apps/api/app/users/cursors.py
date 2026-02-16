@@ -7,12 +7,11 @@ from datetime import datetime
 from uuid import UUID
 
 from app.pagination import (
-    CursorError,
     CreatedAtIdCursor,
+    CursorError,
     decode_created_at_id_cursor,
     encode_created_at_id_cursor,
 )
-
 
 # ---- Follows cursor: (created_at, id) ----
 FollowsCursor = CreatedAtIdCursor
