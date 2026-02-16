@@ -8,7 +8,13 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_user_id
 from app.deps import get_db
-from app.posts.schemas import PaginatedPostsOut, PostActionOut, PostCreateIn, PostOut
+from app.posts.schemas import (
+    PaginatedPostsOut,
+    PostActionOut,
+    PostCreateIn,
+    PostEngagementOut,
+    PostOut,
+)
 from app.posts.service import (
     CreatePostMediaItem,
     PostError,
@@ -18,6 +24,10 @@ from app.posts.service import (
     get_following_feed,
     get_post_detail,
     get_profile_posts,
+    like_post,
+    save_post,
+    unlike_post,
+    unsave_post,
 )
 
 router = APIRouter(tags=["posts"])
@@ -147,6 +157,62 @@ def get_post_route(
         post_uuid = _parse_uuid(post_id, field="post_id")
         payload = get_post_detail(db, post_id=post_uuid, viewer_user_id=viewer_user_id)
         return PostOut.model_validate(payload)
+    except PostError as err:
+        _raise_post_error(err)
+
+
+@router.post("/posts/{post_id}/like", response_model=PostEngagementOut)
+def like_post_route(
+    post_id: str,
+    db: Annotated[Session, Depends(get_db)],
+    viewer_user_id: Annotated[uuid.UUID, Depends(require_user_id)],
+) -> PostEngagementOut:
+    try:
+        post_uuid = _parse_uuid(post_id, field="post_id")
+        payload = like_post(db, post_id=post_uuid, viewer_user_id=viewer_user_id)
+        return PostEngagementOut.model_validate(payload)
+    except PostError as err:
+        _raise_post_error(err)
+
+
+@router.delete("/posts/{post_id}/like", response_model=PostEngagementOut)
+def unlike_post_route(
+    post_id: str,
+    db: Annotated[Session, Depends(get_db)],
+    viewer_user_id: Annotated[uuid.UUID, Depends(require_user_id)],
+) -> PostEngagementOut:
+    try:
+        post_uuid = _parse_uuid(post_id, field="post_id")
+        payload = unlike_post(db, post_id=post_uuid, viewer_user_id=viewer_user_id)
+        return PostEngagementOut.model_validate(payload)
+    except PostError as err:
+        _raise_post_error(err)
+
+
+@router.post("/posts/{post_id}/save", response_model=PostEngagementOut)
+def save_post_route(
+    post_id: str,
+    db: Annotated[Session, Depends(get_db)],
+    viewer_user_id: Annotated[uuid.UUID, Depends(require_user_id)],
+) -> PostEngagementOut:
+    try:
+        post_uuid = _parse_uuid(post_id, field="post_id")
+        payload = save_post(db, post_id=post_uuid, viewer_user_id=viewer_user_id)
+        return PostEngagementOut.model_validate(payload)
+    except PostError as err:
+        _raise_post_error(err)
+
+
+@router.delete("/posts/{post_id}/save", response_model=PostEngagementOut)
+def unsave_post_route(
+    post_id: str,
+    db: Annotated[Session, Depends(get_db)],
+    viewer_user_id: Annotated[uuid.UUID, Depends(require_user_id)],
+) -> PostEngagementOut:
+    try:
+        post_uuid = _parse_uuid(post_id, field="post_id")
+        payload = unsave_post(db, post_id=post_uuid, viewer_user_id=viewer_user_id)
+        return PostEngagementOut.model_validate(payload)
     except PostError as err:
         _raise_post_error(err)
 

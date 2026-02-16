@@ -193,6 +193,39 @@ def _paginate_posts(
     return _serialize_posts(db, rows, viewer_user_id), next_cursor
 
 
+def _ensure_post_exists(db: Session, *, post_id: uuid.UUID) -> None:
+    exists_post = db.execute(select(Post.id).where(Post.id == post_id).limit(1)).scalar_one_or_none()
+    if not exists_post:
+        raise PostError(code="post_not_found")
+
+
+def _engagement_snapshot(db: Session, *, post_id: uuid.UUID, viewer_user_id: uuid.UUID) -> dict[str, Any]:
+    like_count = db.execute(
+        select(func.count(PostLike.user_id)).where(PostLike.post_id == post_id)
+    ).scalar_one()
+
+    viewer_liked = bool(
+        db.execute(
+            select(PostLike.post_id).where(
+                and_(PostLike.post_id == post_id, PostLike.user_id == viewer_user_id)
+            )
+        ).scalar_one_or_none()
+    )
+    viewer_saved = bool(
+        db.execute(
+            select(PostSave.post_id).where(
+                and_(PostSave.post_id == post_id, PostSave.user_id == viewer_user_id)
+            )
+        ).scalar_one_or_none()
+    )
+
+    return {
+        "like_count": int(like_count),
+        "viewer_liked": viewer_liked,
+        "viewer_saved": viewer_saved,
+    }
+
+
 def create_post(
     db: Session,
     *,
@@ -236,6 +269,54 @@ def create_post(
         raise PostError(code="post_create_failed") from e
 
     return get_post_detail(db, post_id=post.id, viewer_user_id=viewer_user_id)
+
+
+def like_post(db: Session, *, post_id: uuid.UUID, viewer_user_id: uuid.UUID) -> dict[str, Any]:
+    _ensure_post_exists(db, post_id=post_id)
+
+    db.add(PostLike(post_id=post_id, user_id=viewer_user_id))
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        _ensure_post_exists(db, post_id=post_id)
+
+    return _engagement_snapshot(db, post_id=post_id, viewer_user_id=viewer_user_id)
+
+
+def unlike_post(db: Session, *, post_id: uuid.UUID, viewer_user_id: uuid.UUID) -> dict[str, Any]:
+    _ensure_post_exists(db, post_id=post_id)
+    db.execute(
+        PostLike.__table__.delete().where(
+            and_(PostLike.post_id == post_id, PostLike.user_id == viewer_user_id)
+        )
+    )
+    db.commit()
+    return _engagement_snapshot(db, post_id=post_id, viewer_user_id=viewer_user_id)
+
+
+def save_post(db: Session, *, post_id: uuid.UUID, viewer_user_id: uuid.UUID) -> dict[str, Any]:
+    _ensure_post_exists(db, post_id=post_id)
+
+    db.add(PostSave(post_id=post_id, user_id=viewer_user_id))
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        _ensure_post_exists(db, post_id=post_id)
+
+    return _engagement_snapshot(db, post_id=post_id, viewer_user_id=viewer_user_id)
+
+
+def unsave_post(db: Session, *, post_id: uuid.UUID, viewer_user_id: uuid.UUID) -> dict[str, Any]:
+    _ensure_post_exists(db, post_id=post_id)
+    db.execute(
+        PostSave.__table__.delete().where(
+            and_(PostSave.post_id == post_id, PostSave.user_id == viewer_user_id)
+        )
+    )
+    db.commit()
+    return _engagement_snapshot(db, post_id=post_id, viewer_user_id=viewer_user_id)
 
 
 def get_following_feed(
