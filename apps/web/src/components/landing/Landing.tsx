@@ -114,7 +114,7 @@ export function Landing() {
         scale: 0.965,
         rotate: tile.rotate * 0.55,
         filter: "blur(0px)",
-        transition: { duration: 0.32, ease: [0.22, 1, 0.36, 1] },
+        transition: { duration: 0.32 },
       }),
       compress: (tile: (typeof overlayTiles)[number]) => ({
         x: tile.dx + tile.clusterX * 0.7,
@@ -122,7 +122,7 @@ export function Landing() {
         scale: 0.94,
         rotate: tile.rotate * 0.35,
         filter: `blur(${tile.blur + 0.4}px)`,
-        transition: { duration: 0.12, ease: [0.4, 0, 0.2, 1] },
+        transition: { duration: 0.12 },
       }),
       explode: (tile: (typeof overlayTiles)[number]) => ({
         x: tile.dx + tile.clusterX * 0.7,
@@ -131,10 +131,10 @@ export function Landing() {
         rotate: tile.rotate * 0.2,
         opacity: 0,
         filter: `blur(${tile.blur + 2.6}px)`,
-        transition: { duration: 0.18, ease: [0.2, 0.9, 0.3, 1] },
+        transition: { duration: 0.18 },
       }),
     }),
-    [overlayTiles],
+    [],
   );
 
   return (

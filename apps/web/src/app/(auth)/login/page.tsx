@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
@@ -12,7 +12,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { AuthShell } from "@/components/auth/AuthShell";
 import { FloatingInput } from "@/components/ui/FloatingInput";
 import { OAuthButton, PrimaryButton } from "@/components/ui/Buttons";
-import { apiFetch, setTokens } from "@/lib/api";
+import { apiFetch, getErrorMessage, setTokens } from "@/lib/api";
+import { trackError, trackEvent } from "@/lib/telemetry";
 
 const schema = z.object({
   email: z.string().email("Enter a valid email"),
@@ -38,6 +39,10 @@ export default function LoginPage() {
 
   const v = form.watch();
 
+  useEffect(() => {
+    void trackEvent("auth.login_open");
+  }, []);
+
   const onSubmit = form.handleSubmit(async (values) => {
     const t = toast.loading("Signing in…");
     try {
@@ -49,9 +54,11 @@ export default function LoginPage() {
       setTokens({ access: data.access_token, refresh: data.refresh_token });
 
       toast.success("Welcome back.", { id: t });
-      router.push("/app/me");
-    } catch (e: any) {
-      toast.error(e.message, { id: t });
+      void trackEvent("auth.login_success");
+      router.push("/feed");
+    } catch (e: unknown) {
+      toast.error(getErrorMessage(e, "Failed to sign in."), { id: t });
+      void trackError("auth.login_failed", e);
     }
   });
 

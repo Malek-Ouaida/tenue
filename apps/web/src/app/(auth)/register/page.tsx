@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
@@ -12,7 +12,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { AuthShell } from "@/components/auth/AuthShell";
 import { FloatingInput } from "@/components/ui/FloatingInput";
 import { PrimaryButton } from "@/components/ui/Buttons";
-import { apiFetch, setTokens } from "@/lib/api";
+import { apiFetch, getErrorMessage, setTokens } from "@/lib/api";
+import { trackError, trackEvent } from "@/lib/telemetry";
 
 const schema = z.object({
   email: z.string().email("Enter a valid email"),
@@ -44,6 +45,10 @@ export default function RegisterPage() {
 
   const v = form.watch();
 
+  useEffect(() => {
+    void trackEvent("auth.register_open");
+  }, []);
+
   const onSubmit = form.handleSubmit(async (values) => {
     const t = toast.loading("Creating account…");
     try {
@@ -60,9 +65,11 @@ export default function RegisterPage() {
       setTokens({ access: data.access_token, refresh: data.refresh_token });
 
       toast.success("Account created.", { id: t });
-      router.push("/app/me");
-    } catch (e: any) {
-      toast.error(e.message, { id: t });
+      void trackEvent("auth.register_success");
+      router.push("/feed");
+    } catch (e: unknown) {
+      toast.error(getErrorMessage(e, "Failed to create account."), { id: t });
+      void trackError("auth.register_failed", e);
     }
   });
 
@@ -114,7 +121,7 @@ export default function RegisterPage() {
           }
           onBlur={() => form.trigger("display_name")}
           autoComplete="name"
-          error={form.formState.errors.display_name?.message as any}
+          error={form.formState.errors.display_name?.message as string | undefined}
         />
 
         <FloatingInput

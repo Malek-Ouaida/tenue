@@ -2,18 +2,20 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Shirt, Camera, User, Heart } from "lucide-react";
+import { Compass, House, PlusSquare, User } from "lucide-react";
 
 const NAV_ITEMS = [
-  { label: "Explore", href: "/app", icon: Home },
-  { label: "Swipe", href: "/app/swipe", icon: Heart },
-  { label: "Closet", href: "/app/closet", icon: Shirt },
-  { label: "Try On", href: "/app/try-on", icon: Camera },
+  { label: "Feed", href: "/feed", icon: House },
+  { label: "Explore", href: "/explore", icon: Compass },
+  { label: "Post", href: "/post/new", icon: PlusSquare },
   { label: "Profile", href: "/app/me", icon: User },
 ];
 
 function isActivePath(pathname: string, href: string) {
-  if (href === "/app") return pathname === "/app";
+  if (href === "/feed") return pathname === "/feed" || pathname.startsWith("/posts/");
+  if (href === "/explore") return pathname === "/explore";
+  if (href === "/post/new") return pathname === "/post/new";
+  if (href === "/app/me") return pathname === "/app/me" || pathname.startsWith("/p/");
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
