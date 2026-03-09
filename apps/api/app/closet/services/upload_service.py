@@ -14,6 +14,8 @@ from app.media_validation import MediaValidationError, detect_image_metadata
 from app.s3_client import s3_client
 
 settings = get_settings()
+_ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp"}
+_CONTENT_TYPE_ALIASES = {"image/jpg": "image/jpeg"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +45,13 @@ def _build_public_url(*, key: str) -> str:
     return f"{base}/{key}"
 
 
+def _normalize_declared_content_type(value: str) -> str:
+    declared = _CONTENT_TYPE_ALIASES.get(value.strip().lower(), value.strip().lower())
+    if declared not in _ALLOWED_CONTENT_TYPES:
+        raise ClosetUploadError(code="unsupported_image_type")
+    return declared
+
+
 def _delete_object_best_effort(*, key: str) -> None:
     try:
         s3_client().delete_object(Bucket=settings.s3_bucket, Key=key)
@@ -68,8 +77,10 @@ async def upload_and_create_draft_item(
     except MediaValidationError as e:
         raise ClosetUploadError(code=e.code) from e
 
-    if file.content_type and file.content_type != metadata.content_type:
-        raise ClosetUploadError(code="content_type_mismatch")
+    if file.content_type:
+        declared_type = _normalize_declared_content_type(file.content_type)
+        if declared_type != metadata.content_type:
+            raise ClosetUploadError(code="content_type_mismatch")
 
     item_id = uuid.uuid4()
     key = _build_original_image_key(
