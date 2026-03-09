@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 import uuid
 from dataclasses import dataclass
 
@@ -10,9 +11,13 @@ from app.closet.providers.background_removal import (
     build_background_removal_provider,
 )
 from app.closet.repositories.item_repository import ClosetItemRepository, ClosetRepositoryError
+from app.closet.repositories.processing_run_repository import (
+    ClosetProcessingRunRepository,
+    ClosetProcessingRunRepositoryError,
+)
 from app.closet.services.image_processing_service import ImageProcessingError, process_image
 from app.config import get_settings
-from app.models.closet_item import ClosetItemStatus
+from app.models.closet_item import ClosetItemStatus, ClosetProcessingRun
 from app.s3_client import s3_client
 
 settings = get_settings()
@@ -107,6 +112,8 @@ async def process_item_background(
         raise ClosetProcessingError(code="original_image_missing")
 
     provider = build_background_removal_provider(settings)
+    run: ClosetProcessingRun | None = None
+    run_started_perf: float | None = None
 
     try:
         item = ClosetItemRepository.mark_processing_started(db, item=item)
@@ -117,8 +124,19 @@ async def process_item_background(
     thumbnail_key: str | None = None
     error_code = "processing_failed"
     error_message: str | None = None
+    run_raw_response: dict[str, object] | None = None
 
     try:
+        run_started_perf = time.perf_counter()
+        run = ClosetProcessingRunRepository.create_started_run(
+            db,
+            run_id=uuid.uuid4(),
+            item_id=item.id,
+            stage="image_processing",
+            provider=provider.name,
+            provider_version=provider.version,
+        )
+
         original_bytes = _read_s3_object(key=item.original_image_key)
         original_content_type = (
             str(item.original_image_meta_json.get("content_type", "application/octet-stream"))
@@ -131,6 +149,7 @@ async def process_item_background(
             content_type=original_content_type,
             provider=provider,
         )
+        run_raw_response = result.provider_raw_response
 
         processed_key = _build_processed_key(
             user_id=user_id,
@@ -169,6 +188,17 @@ async def process_item_background(
             _delete_object_best_effort(key=processed_key)
             _delete_object_best_effort(key=thumbnail_key)
             raise ClosetProcessingError(code=e.code) from e
+        if run and run_started_perf is not None:
+            latency_ms = max(0, int((time.perf_counter() - run_started_perf) * 1000))
+            try:
+                ClosetProcessingRunRepository.mark_succeeded(
+                    db,
+                    run=run,
+                    latency_ms=latency_ms,
+                    raw_response=run_raw_response,
+                )
+            except ClosetProcessingRunRepositoryError as e:
+                raise ClosetProcessingError(code=e.code) from e
 
         return ClosetProcessingResult(
             item_id=item.id,
@@ -184,9 +214,11 @@ async def process_item_background(
     except BackgroundRemovalError as e:
         error_code = e.code
         error_message = None
+        run_raw_response = e.raw_response
     except ImageProcessingError as e:
         error_code = e.code
         error_message = None
+        run_raw_response = e.raw_response
     except ClosetProcessingError as e:
         error_code = e.code
         error_message = None
@@ -198,6 +230,20 @@ async def process_item_background(
         _delete_object_best_effort(key=processed_key)
     if thumbnail_key:
         _delete_object_best_effort(key=thumbnail_key)
+
+    if run and run_started_perf is not None:
+        latency_ms = max(0, int((time.perf_counter() - run_started_perf) * 1000))
+        try:
+            ClosetProcessingRunRepository.mark_failed(
+                db,
+                run=run,
+                error_code=error_code,
+                error_message=error_message,
+                latency_ms=latency_ms,
+                raw_response=run_raw_response,
+            )
+        except ClosetProcessingRunRepositoryError as e:
+            raise ClosetProcessingError(code=e.code) from e
 
     try:
         ClosetItemRepository.mark_processing_failed(
