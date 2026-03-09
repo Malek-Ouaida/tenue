@@ -60,6 +60,11 @@ class Settings(BaseModel):
     closet_background_remove_endpoint_url: str | None = None
     closet_background_remove_api_key: str | None = None
     closet_background_timeout_seconds: int = 20
+    closet_garment_analysis_provider: str = "mock"
+    closet_garment_analysis_endpoint_url: str | None = None
+    closet_garment_analysis_api_key: str | None = None
+    closet_garment_analysis_model: str | None = None
+    closet_garment_analysis_timeout_seconds: int = 30
 
 
 @lru_cache
@@ -101,4 +106,9 @@ def get_settings() -> Settings:
         closet_background_remove_endpoint_url=os.getenv("CLOSET_BACKGROUND_REMOVE_ENDPOINT_URL"),
         closet_background_remove_api_key=os.getenv("CLOSET_BACKGROUND_REMOVE_API_KEY"),
         closet_background_timeout_seconds=int(os.getenv("CLOSET_BACKGROUND_TIMEOUT_SECONDS", "20")),
+        closet_garment_analysis_provider=os.getenv("CLOSET_GARMENT_ANALYSIS_PROVIDER", "mock"),
+        closet_garment_analysis_endpoint_url=os.getenv("CLOSET_GARMENT_ANALYSIS_ENDPOINT_URL"),
+        closet_garment_analysis_api_key=os.getenv("CLOSET_GARMENT_ANALYSIS_API_KEY"),
+        closet_garment_analysis_model=os.getenv("CLOSET_GARMENT_ANALYSIS_MODEL"),
+        closet_garment_analysis_timeout_seconds=int(os.getenv("CLOSET_GARMENT_ANALYSIS_TIMEOUT_SECONDS", "30")),
     )

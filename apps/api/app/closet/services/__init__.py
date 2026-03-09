@@ -1,3 +1,8 @@
+from app.closet.services.garment_analysis_service import (  # noqa: F401
+    GarmentAnalysisServiceError,
+    GarmentAnalysisServiceResult,
+    analyze_garment,
+)
 from app.closet.services.processing_service import (  # noqa: F401
     ClosetProcessingError,
     ClosetProcessingResult,

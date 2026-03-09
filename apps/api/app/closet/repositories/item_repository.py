@@ -86,12 +86,18 @@ class ClosetItemRepository:
         processed_image_meta: dict[str, Any],
         thumbnail_key: str,
         thumbnail_meta: dict[str, Any],
+        ai_provider: str | None = None,
+        ai_provider_version: str | None = None,
+        ai_raw_response: dict[str, Any] | None = None,
     ) -> ClosetItem:
         item.item_status = ClosetItemStatus.PROCESSED
         item.processed_image_key = processed_image_key
         item.processed_image_meta_json = processed_image_meta
         item.thumbnail_key = thumbnail_key
         item.thumbnail_meta_json = thumbnail_meta
+        item.ai_provider = ai_provider
+        item.ai_provider_version = ai_provider_version
+        item.ai_raw_response_json = ai_raw_response
         item.last_error_code = None
         item.last_error_message = None
         db.add(item)
