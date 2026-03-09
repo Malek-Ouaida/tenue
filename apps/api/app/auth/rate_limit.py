@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 from fastapi import HTTPException, status
 
 from app.redis_client import redis_client
@@ -20,3 +22,15 @@ def enforce_rate_limit(*, key: str, limit: int, ttl_seconds: int, message: str =
     count = _incr_with_ttl(key, ttl_seconds)
     if count > limit:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=message)
+
+
+def enforce_user_rate_limit(
+    *,
+    user_id: uuid.UUID,
+    action: str,
+    limit: int,
+    ttl_seconds: int,
+    message: str = "Too many requests",
+) -> None:
+    key = f"rl:user:{user_id}:{action}"
+    enforce_rate_limit(key=key, limit=limit, ttl_seconds=ttl_seconds, message=message)

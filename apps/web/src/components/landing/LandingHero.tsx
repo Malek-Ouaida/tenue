@@ -7,7 +7,7 @@ type LandingHeroProps = {
   onSignUpClick: () => void;
   onLogInClick: () => void;
   isTransitioning?: boolean;
-  heroRef?: RefObject<HTMLDivElement>;
+  heroRef?: RefObject<HTMLDivElement | null>;
 };
 
 export function LandingHero({

@@ -24,6 +24,11 @@ from app.models.closet_taxonomy import (  # noqa: F401
     ClosetStyleTag,
     ClosetSubcategory,
 )
+from app.models.post import Post  # noqa: F401
+from app.models.post_comment import PostComment  # noqa: F401
+from app.models.post_like import PostLike  # noqa: F401
+from app.models.post_media import PostMedia  # noqa: F401
+from app.models.post_save import PostSave  # noqa: F401
 from app.models.refresh_token import AuthRefreshToken  # noqa: F401
 from app.models.user import User  # noqa: F401
 from app.models.user_follow import UserFollow  # noqa: F401

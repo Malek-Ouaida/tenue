@@ -4,15 +4,19 @@ const TOKENS_KEY = "tenue_tokens";
 
 export class ApiError extends Error {
   status: number;
-  data: any;
+  data: unknown;
 
-  constructor(message: string, status: number, data: any) {
+  constructor(message: string, status: number, data: unknown) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.data = data;
     Object.setPrototypeOf(this, ApiError.prototype);
   }
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
 }
 
 export function getTokens(): Tokens | null {
@@ -38,33 +42,50 @@ export function clearTokens(): void {
   localStorage.removeItem(TOKENS_KEY);
 }
 
-export function parseApiError(data: any, fallback = "Request failed"): string {
+export function parseApiError(data: unknown, fallback = "Request failed"): string {
   if (typeof data === "string") return data;
 
-  if (Array.isArray(data?.detail)) {
-    const first = data.detail[0];
+  const obj = asRecord(data);
+  const detail = obj ? obj.detail : undefined;
+
+  if (Array.isArray(detail)) {
+    const first = asRecord(detail[0]);
     if (first?.msg) return String(first.msg);
   }
 
+  if (obj) {
+    const detailObj = asRecord(obj.detail);
+    if (detailObj?.error) return String(detailObj.error);
+    if (detailObj?.message) return String(detailObj.message);
+    if (typeof obj.detail === "string") return obj.detail;
+    if (obj.error) return String(obj.error);
+  }
+
   return (
-    data?.detail?.error ||
-    data?.detail?.message ||
-    data?.detail ||
-    data?.error ||
     fallback
   );
+}
+
+export function getErrorMessage(error: unknown, fallback = "Request failed"): string {
+  if (error instanceof ApiError) return error.message;
+  if (error instanceof Error) return error.message;
+  return parseApiError(error, fallback);
+}
+
+export function buildApiUrl(path: string): string {
+  const base = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/+$/, "");
+  if (!base) throw new Error("NEXT_PUBLIC_API_URL is not set");
+  return path.startsWith("/") ? `${base}${path}` : `${base}/${path}`;
 }
 
 export async function apiFetch<T>(
   path: string,
   opts?: RequestInit & { auth?: boolean }
 ): Promise<T> {
-  const base = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/+$/, "");
-  if (!base) throw new Error("NEXT_PUBLIC_API_URL is not set");
-
   const { auth, ...init } = opts ?? {};
   const headers = new Headers(init.headers);
-  if (init.body != null && !headers.has("Content-Type")) {
+  const isFormData = typeof FormData !== "undefined" && init.body instanceof FormData;
+  if (init.body != null && !headers.has("Content-Type") && !isFormData) {
     headers.set("Content-Type", "application/json");
   }
 
@@ -74,14 +95,14 @@ export async function apiFetch<T>(
     headers.set("Authorization", `Bearer ${tokens.access}`);
   }
 
-  const url = path.startsWith("/") ? `${base}${path}` : `${base}/${path}`;
+  const url = buildApiUrl(path);
   const res = await fetch(url, {
     ...init,
     headers,
   });
 
   const text = await res.text();
-  let parsed: any = null;
+  let parsed: unknown = null;
   let raw: string | null = null;
   if (text) {
     raw = text;
