@@ -18,3 +18,17 @@ class ClosetItemUploadOut(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(extra="forbid")
+
+
+class ClosetItemProcessOut(BaseModel):
+    id: str
+    item_status: Literal["processed"]
+    processed_image_key: str
+    processed_image_url: str
+    thumbnail_key: str
+    thumbnail_url: str
+    processing_attempt_count: int
+    provider_name: str
+    provider_version: str
+
+    model_config = ConfigDict(extra="forbid")
