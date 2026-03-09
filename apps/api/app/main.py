@@ -10,6 +10,7 @@ from sqlalchemy import text
 from app.audit import audit_log
 from app.auth.dependencies import require_user_id
 from app.auth.router import router as auth_router
+from app.closet.router import router as closet_router
 from app.config import get_settings
 from app.db import engine
 from app.events.router import router as events_router
@@ -42,6 +43,7 @@ app.include_router(events_router)
 app.include_router(follow_router)
 app.include_router(users_router)
 app.include_router(posts_router)
+app.include_router(closet_router)
 
 @app.get("/health")
 def health() -> dict[str, Any]:
