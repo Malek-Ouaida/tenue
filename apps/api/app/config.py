@@ -56,6 +56,11 @@ class Settings(BaseModel):
 
     upload_max_bytes: int = 10 * 1024 * 1024
 
+    closet_background_provider: str = "mock"
+    closet_background_remove_endpoint_url: str | None = None
+    closet_background_remove_api_key: str | None = None
+    closet_background_timeout_seconds: int = 20
+
 
 @lru_cache
 def get_settings() -> Settings:
@@ -92,4 +97,8 @@ def get_settings() -> Settings:
         rate_limit_follow_toggle_user_per_min=int(os.getenv("RATE_LIMIT_FOLLOW_TOGGLE_USER_PER_MIN", "30")),
         rate_limit_reaction_toggle_user_per_min=int(os.getenv("RATE_LIMIT_REACTION_TOGGLE_USER_PER_MIN", "120")),
         upload_max_bytes=int(os.getenv("UPLOAD_MAX_BYTES", str(10 * 1024 * 1024))),
+        closet_background_provider=os.getenv("CLOSET_BACKGROUND_PROVIDER", "mock"),
+        closet_background_remove_endpoint_url=os.getenv("CLOSET_BACKGROUND_REMOVE_ENDPOINT_URL"),
+        closet_background_remove_api_key=os.getenv("CLOSET_BACKGROUND_REMOVE_API_KEY"),
+        closet_background_timeout_seconds=int(os.getenv("CLOSET_BACKGROUND_TIMEOUT_SECONDS", "20")),
     )
