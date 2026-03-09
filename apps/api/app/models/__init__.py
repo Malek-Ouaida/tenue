@@ -1,10 +1,35 @@
-from app.models.user import User  # noqa: F401
 from app.models.auth_session import AuthSession  # noqa: F401
-from app.models.refresh_token import AuthRefreshToken  # noqa: F401
-from app.models.user_profile import UserProfile  # noqa: F401
-from app.models.user_follow import UserFollow  # noqa: F401
+from app.models.closet_item import (  # noqa: F401
+    ClosetFieldSource,
+    ClosetFit,
+    ClosetItem,
+    ClosetItemFieldState,
+    ClosetItemOccasion,
+    ClosetItemSeason,
+    ClosetItemSecondaryColor,
+    ClosetItemStatus,
+    ClosetItemStyleTag,
+    ClosetProcessingRun,
+    ClosetProcessingRunStatus,
+    ClosetSleeveLength,
+)
+from app.models.closet_taxonomy import (  # noqa: F401
+    ClosetCategory,
+    ClosetColor,
+    ClosetFormalityLevel,
+    ClosetMaterial,
+    ClosetOccasion,
+    ClosetPattern,
+    ClosetSeason,
+    ClosetStyleTag,
+    ClosetSubcategory,
+)
 from app.models.post import Post  # noqa: F401
-from app.models.post_media import PostMedia  # noqa: F401
-from app.models.post_like import PostLike  # noqa: F401
-from app.models.post_save import PostSave  # noqa: F401
 from app.models.post_comment import PostComment  # noqa: F401
+from app.models.post_like import PostLike  # noqa: F401
+from app.models.post_media import PostMedia  # noqa: F401
+from app.models.post_save import PostSave  # noqa: F401
+from app.models.refresh_token import AuthRefreshToken  # noqa: F401
+from app.models.user import User  # noqa: F401
+from app.models.user_follow import UserFollow  # noqa: F401
+from app.models.user_profile import UserProfile  # noqa: F401
