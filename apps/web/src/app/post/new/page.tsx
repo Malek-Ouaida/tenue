@@ -1,12 +1,13 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { ApiError, clearTokens, getErrorMessage } from "@/lib/api";
 import { compressImage } from "@/lib/image-compress";
 import { createPost, uploadImage } from "@/lib/social";
+import { trackError, trackEvent } from "@/lib/telemetry";
 
 export default function NewPostPage() {
   const router = useRouter();
@@ -16,6 +17,10 @@ export default function NewPostPage() {
   const [progress, setProgress] = useState<string | null>(null);
 
   const canSubmit = useMemo(() => files.length > 0 && !submitting, [files.length, submitting]);
+
+  useEffect(() => {
+    void trackEvent("post_new.open");
+  }, []);
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -52,6 +57,7 @@ export default function NewPostPage() {
       });
 
       toast.success("Post created.", { id: toastId });
+      void trackEvent("post_new.created", { post_id: created.id, media_count: media.length });
       router.push(`/posts/${created.id}`);
     } catch (e: unknown) {
       if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
@@ -61,6 +67,7 @@ export default function NewPostPage() {
       }
 
       toast.error(getErrorMessage(e, "Failed to create post."), { id: toastId });
+      void trackError("post_new.create_failed", e, { media_count: files.length });
     } finally {
       setSubmitting(false);
       setProgress(null);

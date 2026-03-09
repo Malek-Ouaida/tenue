@@ -138,6 +138,13 @@ export async function fetchProfilePosts(
   });
 }
 
+export async function fetchMySavedPosts(cursor?: string | null, limit = 20): Promise<FeedPage> {
+  return apiFetch<FeedPage>(withQuery("/users/me/saved-posts", { cursor, limit }), {
+    auth: true,
+    cache: "no-store",
+  });
+}
+
 export async function createPost(payload: CreatePostPayload): Promise<PostItem> {
   return apiFetch<PostItem>("/posts", {
     method: "POST",

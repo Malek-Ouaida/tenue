@@ -32,6 +32,7 @@ from app.posts.service import (
     get_following_feed,
     get_post_detail,
     get_profile_posts,
+    get_saved_posts,
     like_post,
     list_comments,
     save_post,
@@ -162,6 +163,25 @@ def profile_posts_route(
         items, next_cursor = get_profile_posts(
             db,
             username=username,
+            viewer_user_id=viewer_user_id,
+            cursor=cursor,
+            limit=limit,
+        )
+        return PaginatedPostsOut.model_validate({"items": items, "next_cursor": next_cursor})
+    except PostError as err:
+        _raise_post_error(err)
+
+
+@router.get("/users/me/saved-posts", response_model=PaginatedPostsOut)
+def my_saved_posts_route(
+    db: Annotated[Session, Depends(get_db)],
+    viewer_user_id: Annotated[uuid.UUID, Depends(require_user_id)],
+    cursor: str | None = Query(None),
+    limit: int = Query(20, ge=1, le=50),
+) -> PaginatedPostsOut:
+    try:
+        items, next_cursor = get_saved_posts(
+            db,
             viewer_user_id=viewer_user_id,
             cursor=cursor,
             limit=limit,

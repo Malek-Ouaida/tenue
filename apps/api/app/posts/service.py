@@ -499,6 +499,51 @@ def get_profile_posts(
     )
 
 
+def get_saved_posts(
+    db: Session,
+    *,
+    viewer_user_id: uuid.UUID,
+    cursor: str | None,
+    limit: int,
+) -> tuple[list[dict[str, Any]], str | None]:
+    if limit < 1 or limit > 50:
+        raise PostError(code="limit_out_of_range")
+
+    cur = _decode_cursor(cursor)
+
+    save_stmt = select(PostSave).where(PostSave.user_id == viewer_user_id)
+    if cur:
+        save_stmt = save_stmt.where(
+            (PostSave.created_at < cur.created_at)
+            | ((PostSave.created_at == cur.created_at) & (PostSave.post_id < cur.id))
+        )
+
+    save_rows = (
+        db.execute(
+            save_stmt.order_by(desc(PostSave.created_at), desc(PostSave.post_id)).limit(limit + 1)
+        )
+        .scalars()
+        .all()
+    )
+
+    has_more = len(save_rows) > limit
+    save_rows = save_rows[:limit]
+    post_ids = [row.post_id for row in save_rows]
+    if not post_ids:
+        return [], None
+
+    posts = db.execute(select(Post).where(Post.id.in_(post_ids))).scalars().all()
+    post_by_id = {post.id: post for post in posts}
+    ordered_posts = [post_by_id[post_id] for post_id in post_ids if post_id in post_by_id]
+
+    next_cursor = None
+    if has_more and save_rows:
+        last = save_rows[-1]
+        next_cursor = encode_created_at_id_cursor(last.created_at, last.post_id)
+
+    return _serialize_posts(db, ordered_posts, viewer_user_id), next_cursor
+
+
 def get_post_detail(db: Session, *, post_id: uuid.UUID, viewer_user_id: uuid.UUID) -> dict[str, Any]:
     post = db.execute(select(Post).where(Post.id == post_id).limit(1)).scalar_one_or_none()
     if not post:

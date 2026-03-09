@@ -12,6 +12,7 @@ from app.auth.dependencies import require_user_id
 from app.auth.router import router as auth_router
 from app.config import get_settings
 from app.db import engine
+from app.events.router import router as events_router
 from app.media_validation import MediaValidationError, detect_image_metadata
 from app.posts.router import router as posts_router
 from app.redis_client import redis_client
@@ -37,6 +38,7 @@ app.add_middleware(
 
 # --- Routers ---
 app.include_router(auth_router)
+app.include_router(events_router)
 app.include_router(follow_router)
 app.include_router(users_router)
 app.include_router(posts_router)

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -18,7 +18,10 @@ import {
   unlikePost,
   unsavePost,
 } from "@/lib/social";
+import { trackError, trackEvent } from "@/lib/telemetry";
 import { PostCard } from "@/components/social/PostCard";
+
+type UiComment = CommentItem & { pending?: boolean };
 
 export default function PostDetailPage() {
   const params = useParams<{ id: string }>();
@@ -26,11 +29,13 @@ export default function PostDetailPage() {
   const postId = params?.id;
 
   const [post, setPost] = useState<PostItem | null>(null);
-  const [comments, setComments] = useState<CommentItem[]>([]);
+  const [comments, setComments] = useState<UiComment[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [commentBody, setCommentBody] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadingComments, setLoadingComments] = useState(false);
+  const [postError, setPostError] = useState<string | null>(null);
+  const [commentsError, setCommentsError] = useState<string | null>(null);
 
   const handleAuthError = useCallback(
     (error: unknown) => {
@@ -52,9 +57,13 @@ export default function PostDetailPage() {
         const page = await fetchComments(postId, cursor, 20);
         setComments((prev) => (append ? [...prev, ...page.items] : page.items));
         setNextCursor(page.next_cursor);
+        setCommentsError(null);
       } catch (e: unknown) {
         if (handleAuthError(e)) return;
-        toast.error(getErrorMessage(e, "Failed to load comments."));
+        const message = getErrorMessage(e, "Failed to load comments.");
+        setCommentsError(message);
+        toast.error(message);
+        void trackError("post.comments_load_failed", e, { post_id: postId, append });
       } finally {
         setLoadingComments(false);
       }
@@ -62,25 +71,29 @@ export default function PostDetailPage() {
     [handleAuthError, postId]
   );
 
-  useEffect(() => {
+  const loadPost = useCallback(async () => {
     if (!postId) return;
-
-    const load = async () => {
-      setLoading(true);
-      try {
-        const detail = await fetchPost(postId);
-        setPost(detail);
-        await loadComments(null, false);
-      } catch (e: unknown) {
-        if (handleAuthError(e)) return;
-        toast.error(getErrorMessage(e, "Failed to load post."));
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    void load();
+    setLoading(true);
+    setPostError(null);
+    try {
+      const detail = await fetchPost(postId);
+      setPost(detail);
+      await loadComments(null, false);
+      void trackEvent("post.open", { post_id: postId });
+    } catch (e: unknown) {
+      if (handleAuthError(e)) return;
+      const message = getErrorMessage(e, "Failed to load post.");
+      setPostError(message);
+      toast.error(message);
+      void trackError("post.load_failed", e, { post_id: postId });
+    } finally {
+      setLoading(false);
+    }
   }, [handleAuthError, loadComments, postId]);
+
+  useEffect(() => {
+    void loadPost();
+  }, [loadPost]);
 
   const applyEngagement = useCallback((payload: EngagementState) => {
     setPost((prev) => {
@@ -113,6 +126,7 @@ export default function PostDetailPage() {
           viewer_saved: item.viewer_saved,
         });
         toast.error(getErrorMessage(e, "Failed to update like."));
+        void trackError("post.like_toggle_failed", e, { post_id: item.id });
       }
     },
     [applyEngagement]
@@ -137,31 +151,45 @@ export default function PostDetailPage() {
           viewer_saved: item.viewer_saved,
         });
         toast.error(getErrorMessage(e, "Failed to update save."));
+        void trackError("post.save_toggle_failed", e, { post_id: item.id });
       }
     },
     [applyEngagement]
   );
 
+  const pendingCount = useMemo(() => comments.filter((item) => item.pending).length, [comments]);
+
   const onCommentSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!postId || !commentBody.trim()) return;
 
+    const body = commentBody.trim();
+    const tempId = `temp-${Date.now()}`;
+    const optimisticComment: UiComment = {
+      id: tempId,
+      post_id: postId,
+      created_at: new Date().toISOString(),
+      body,
+      author: {
+        username: "you",
+        display_name: null,
+        avatar_url: null,
+      },
+      can_delete: false,
+      pending: true,
+    };
+
+    setComments((prev) => [optimisticComment, ...prev]);
+    setCommentBody("");
+    setPost((prev) => (prev ? { ...prev, comment_count: prev.comment_count + 1 } : prev));
+
     try {
-      const created = await createComment(postId, commentBody.trim());
-      setComments((prev) => [created, ...prev]);
-      setCommentBody("");
-      setPost((prev) => (prev ? { ...prev, comment_count: prev.comment_count + 1 } : prev));
+      const created = await createComment(postId, body);
+      setComments((prev) => prev.map((item) => (item.id === tempId ? created : item)));
+      void trackEvent("post.comment_created", { post_id: postId });
     } catch (e: unknown) {
       if (handleAuthError(e)) return;
-      toast.error(getErrorMessage(e, "Failed to add comment."));
-    }
-  };
-
-  const onDeleteComment = async (commentId: string) => {
-    if (!postId) return;
-    try {
-      await deleteComment(commentId);
-      setComments((prev) => prev.filter((comment) => comment.id !== commentId));
+      setComments((prev) => prev.filter((item) => item.id !== tempId));
       setPost((prev) =>
         prev
           ? {
@@ -170,22 +198,59 @@ export default function PostDetailPage() {
             }
           : prev
       );
+      toast.error(getErrorMessage(e, "Failed to add comment."));
+      void trackError("post.comment_create_failed", e, { post_id: postId });
+    }
+  };
+
+  const onDeleteComment = async (commentId: string) => {
+    if (!postId) return;
+    const toRestore = comments.find((comment) => comment.id === commentId);
+    if (!toRestore) return;
+
+    setComments((prev) => prev.filter((comment) => comment.id !== commentId));
+    setPost((prev) =>
+      prev
+        ? {
+            ...prev,
+            comment_count: Math.max(0, prev.comment_count - 1),
+          }
+        : prev
+    );
+
+    try {
+      await deleteComment(commentId);
+      void trackEvent("post.comment_deleted", { post_id: postId });
     } catch (e: unknown) {
       if (handleAuthError(e)) return;
+      setComments((prev) => [toRestore, ...prev]);
+      setPost((prev) => (prev ? { ...prev, comment_count: prev.comment_count + 1 } : prev));
       toast.error(getErrorMessage(e, "Failed to delete comment."));
+      void trackError("post.comment_delete_failed", e, { post_id: postId });
     }
   };
 
   if (loading) {
-    return <main className="mx-auto w-full max-w-2xl px-4 py-6 text-sm text-[rgb(var(--muted))]">Loading post...</main>;
+    return <div className="mx-auto w-full max-w-2xl px-4 py-6 text-sm text-[rgb(var(--muted))]">Loading post...</div>;
   }
 
-  if (!post) {
-    return <main className="mx-auto w-full max-w-2xl px-4 py-6 text-sm text-[rgb(var(--muted))]">Post not found.</main>;
+  if (!post || postError) {
+    return (
+      <div className="mx-auto w-full max-w-2xl space-y-3 px-4 py-6">
+        <p className="text-sm text-[rgb(var(--muted))]">{postError || "Post not found."}</p>
+        <button
+          type="button"
+          onClick={() => void loadPost()}
+          className="rounded-xl bg-[rgb(var(--card))] px-3 py-1.5 text-xs text-[rgb(var(--fg))] ring-1 ring-[rgb(var(--border))]/70"
+        >
+          Retry
+        </button>
+      </div>
+    );
   }
 
   return (
-    <main className="mx-auto w-full max-w-2xl space-y-6 px-4 py-6">
+    <div className="mx-auto w-full max-w-2xl space-y-6 px-4 py-6">
       <PostCard post={post} onToggleLike={onToggleLike} onToggleSave={onToggleSave} />
 
       <section className="space-y-3 rounded-3xl bg-[rgb(var(--card))] p-4 ring-1 ring-[rgb(var(--border))]/70">
@@ -208,6 +273,25 @@ export default function PostDetailPage() {
           </button>
         </form>
 
+        {pendingCount > 0 ? (
+          <p className="text-xs text-[rgb(var(--muted))]">
+            Sending {pendingCount} comment{pendingCount > 1 ? "s" : ""}...
+          </p>
+        ) : null}
+
+        {commentsError ? (
+          <div className="space-y-2 rounded-2xl bg-[rgb(var(--card-2))] px-3 py-2">
+            <p className="text-xs text-[rgb(var(--muted))]">{commentsError}</p>
+            <button
+              type="button"
+              onClick={() => void loadComments(null, false)}
+              className="rounded-lg bg-[rgb(var(--card))] px-2 py-1 text-xs text-[rgb(var(--fg))] ring-1 ring-[rgb(var(--border))]/70"
+            >
+              Retry comments
+            </button>
+          </div>
+        ) : null}
+
         <div className="space-y-3">
           {comments.map((comment) => (
             <article
@@ -216,7 +300,9 @@ export default function PostDetailPage() {
             >
               <div className="mb-1 flex items-center justify-between gap-2 text-xs text-[rgb(var(--muted))]">
                 <span>@{comment.author.username}</span>
-                {comment.can_delete ? (
+                {comment.pending ? (
+                  <span>Sending...</span>
+                ) : comment.can_delete ? (
                   <button
                     type="button"
                     onClick={() => void onDeleteComment(comment.id)}
@@ -242,6 +328,6 @@ export default function PostDetailPage() {
           </button>
         ) : null}
       </section>
-    </main>
+    </div>
   );
 }

@@ -17,6 +17,7 @@ import {
   followUser,
   unfollowUser,
 } from "@/lib/social";
+import { trackError, trackEvent } from "@/lib/telemetry";
 
 export default function ProfilePage() {
   const params = useParams<{ username: string }>();
@@ -30,6 +31,7 @@ export default function ProfilePage() {
   const [loadingInitial, setLoadingInitial] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [busyFollow, setBusyFollow] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   const handleAuthError = useCallback(
@@ -55,6 +57,7 @@ export default function ProfilePage() {
       } catch (e: unknown) {
         if (handleAuthError(e)) return;
         toast.error(getErrorMessage(e, "Failed to load profile posts."));
+        void trackError("profile.posts_load_failed", e, { username, append });
       } finally {
         setLoadingMore(false);
       }
@@ -62,29 +65,33 @@ export default function ProfilePage() {
     [handleAuthError, username]
   );
 
-  useEffect(() => {
+  const loadProfile = useCallback(async () => {
     if (!username) return;
-
-    const load = async () => {
-      setLoadingInitial(true);
-      try {
-        const [profileData, relationData] = await Promise.all([
-          fetchProfile(username),
-          fetchRelationship(username),
-        ]);
-        setProfile(profileData);
-        setRelationship(relationData);
-        await loadPosts(null, false);
-      } catch (e: unknown) {
-        if (handleAuthError(e)) return;
-        toast.error(getErrorMessage(e, "Failed to load profile."));
-      } finally {
-        setLoadingInitial(false);
-      }
-    };
-
-    void load();
+    setLoadingInitial(true);
+    setError(null);
+    try {
+      const [profileData, relationData] = await Promise.all([
+        fetchProfile(username),
+        fetchRelationship(username),
+      ]);
+      setProfile(profileData);
+      setRelationship(relationData);
+      await loadPosts(null, false);
+      void trackEvent("profile.open", { username });
+    } catch (e: unknown) {
+      if (handleAuthError(e)) return;
+      const message = getErrorMessage(e, "Failed to load profile.");
+      setError(message);
+      toast.error(message);
+      void trackError("profile.load_failed", e, { username });
+    } finally {
+      setLoadingInitial(false);
+    }
   }, [handleAuthError, loadPosts, username]);
+
+  useEffect(() => {
+    void loadProfile();
+  }, [loadProfile]);
 
   useEffect(() => {
     const node = sentinelRef.current;
@@ -125,6 +132,7 @@ export default function ProfilePage() {
     try {
       if (currentlyFollowing) await unfollowUser(username);
       else await followUser(username);
+      void trackEvent("profile.follow_toggled", { username, follow: !currentlyFollowing });
     } catch (e: unknown) {
       if (handleAuthError(e)) return;
       setRelationship({ ...relationship, is_following: currentlyFollowing });
@@ -140,21 +148,33 @@ export default function ProfilePage() {
           : prev
       );
       toast.error(getErrorMessage(e, "Failed to update follow."));
+      void trackError("profile.follow_toggle_failed", e, { username });
     } finally {
       setBusyFollow(false);
     }
   };
 
   if (loadingInitial) {
-    return <main className="mx-auto w-full max-w-5xl px-4 py-6 text-sm text-[rgb(var(--muted))]">Loading profile...</main>;
+    return <div className="mx-auto w-full max-w-5xl px-4 py-6 text-sm text-[rgb(var(--muted))]">Loading profile...</div>;
   }
 
-  if (!profile) {
-    return <main className="mx-auto w-full max-w-5xl px-4 py-6 text-sm text-[rgb(var(--muted))]">Profile not found.</main>;
+  if (!profile || error) {
+    return (
+      <div className="mx-auto w-full max-w-5xl space-y-3 px-4 py-6">
+        <p className="text-sm text-[rgb(var(--muted))]">{error || "Profile not found."}</p>
+        <button
+          type="button"
+          onClick={() => void loadProfile()}
+          className="rounded-xl bg-[rgb(var(--card))] px-3 py-1.5 text-xs text-[rgb(var(--fg))] ring-1 ring-[rgb(var(--border))]/70"
+        >
+          Retry
+        </button>
+      </div>
+    );
   }
 
   return (
-    <main className="mx-auto w-full max-w-5xl space-y-6 px-4 py-6">
+    <div className="mx-auto w-full max-w-5xl space-y-6 px-4 py-6">
       <section className="rounded-3xl bg-[rgb(var(--card))] p-5 ring-1 ring-[rgb(var(--border))]/70">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-2">
@@ -212,6 +232,6 @@ export default function ProfilePage() {
 
       {loadingMore ? <p className="text-sm text-[rgb(var(--muted))]">Loading more posts...</p> : null}
       <div ref={sentinelRef} className="h-6 w-full" />
-    </main>
+    </div>
   );
 }

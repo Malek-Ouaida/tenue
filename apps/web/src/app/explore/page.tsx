@@ -14,6 +14,7 @@ import {
   unlikePost,
   unsavePost,
 } from "@/lib/social";
+import { trackError, trackEvent } from "@/lib/telemetry";
 import { PostCard } from "@/components/social/PostCard";
 
 export default function ExplorePage() {
@@ -22,7 +23,20 @@ export default function ExplorePage() {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingInitial, setLoadingInitial] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+
+  const handleAuthError = useCallback(
+    (error: unknown) => {
+      if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+        clearTokens();
+        router.replace("/login");
+        return true;
+      }
+      return false;
+    },
+    [router]
+  );
 
   const applyEngagement = useCallback((postId: string, payload: EngagementState) => {
     setPosts((prev) =>
@@ -48,22 +62,24 @@ export default function ExplorePage() {
         const page = await fetchExploreFeed(cursor, 20, "recent");
         setPosts((prev) => (append ? [...prev, ...page.items] : page.items));
         setNextCursor(page.next_cursor);
+        setError(null);
+        void trackEvent("explore.loaded", { append, count: page.items.length });
       } catch (e: unknown) {
-        if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
-          clearTokens();
-          router.replace("/login");
-          return;
-        }
-        toast.error(getErrorMessage(e, "Failed to load explore feed."));
+        if (handleAuthError(e)) return;
+        const message = getErrorMessage(e, "Failed to load explore feed.");
+        setError(message);
+        toast.error(message);
+        void trackError("explore.load_failed", e, { append });
       } finally {
         setLoadingInitial(false);
         setLoadingMore(false);
       }
     },
-    [router]
+    [handleAuthError]
   );
 
   useEffect(() => {
+    void trackEvent("explore.open");
     void loadPage(null, false);
   }, [loadPage]);
 
@@ -103,6 +119,7 @@ export default function ExplorePage() {
           viewer_saved: post.viewer_saved,
         });
         toast.error(getErrorMessage(e, "Failed to update like."));
+        void trackError("explore.like_toggle_failed", e, { post_id: post.id });
       }
     },
     [applyEngagement]
@@ -127,17 +144,31 @@ export default function ExplorePage() {
           viewer_saved: post.viewer_saved,
         });
         toast.error(getErrorMessage(e, "Failed to update save."));
+        void trackError("explore.save_toggle_failed", e, { post_id: post.id });
       }
     },
     [applyEngagement]
   );
 
   return (
-    <main className="mx-auto w-full max-w-2xl space-y-6 px-4 py-6">
+    <div className="mx-auto w-full max-w-2xl space-y-6 px-4 py-6">
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold text-[rgb(var(--fg))]">Explore</h1>
         <p className="text-sm text-[rgb(var(--muted))]">Global discovery feed (recent mode).</p>
       </div>
+
+      {error ? (
+        <div className="space-y-3 rounded-2xl bg-[rgb(var(--card))] px-4 py-3 ring-1 ring-[rgb(var(--border))]/70">
+          <p className="text-sm text-[rgb(var(--fg))]">{error}</p>
+          <button
+            type="button"
+            onClick={() => void loadPage(null, false)}
+            className="rounded-xl bg-[rgb(var(--card-2))] px-3 py-1.5 text-xs text-[rgb(var(--fg))] ring-1 ring-[rgb(var(--border))]/70"
+          >
+            Retry
+          </button>
+        </div>
+      ) : null}
 
       <div className="space-y-5">
         {posts.map((post) => (
@@ -152,11 +183,11 @@ export default function ExplorePage() {
 
       {loadingInitial ? <p className="text-sm text-[rgb(var(--muted))]">Loading explore feed...</p> : null}
       {loadingMore ? <p className="text-sm text-[rgb(var(--muted))]">Loading more...</p> : null}
-      {!loadingInitial && posts.length === 0 ? (
+      {!loadingInitial && !error && posts.length === 0 ? (
         <p className="text-sm text-[rgb(var(--muted))]">No posts to explore yet.</p>
       ) : null}
 
       <div ref={sentinelRef} className="h-6 w-full" />
-    </main>
+    </div>
   );
 }

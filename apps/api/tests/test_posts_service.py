@@ -16,6 +16,7 @@ from app.posts.service import (
     create_post,
     delete_comment,
     get_following_feed,
+    get_saved_posts,
     like_post,
     save_post,
     unlike_post,
@@ -160,3 +161,96 @@ def test_comment_delete_requires_owner(
     with pytest.raises(PostError) as not_found_err:
         delete_comment(db, comment_id=comment_id, viewer_user_id=commenter.id)
     assert not_found_err.value.code == "comment_not_found"
+
+
+def test_following_feed_order_desc_created_at_then_id(
+    db: Session,
+    make_user,
+    make_post,
+) -> None:
+    viewer = make_user("viewer_order")
+    t0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+    older = uuid.UUID("10000000-0000-0000-0000-000000000001")
+    newer_small_id = uuid.UUID("10000000-0000-0000-0000-000000000010")
+    newer_big_id = uuid.UUID("10000000-0000-0000-0000-000000000011")
+
+    make_post(viewer.id, "older", created_at=t0, post_id=older)
+    make_post(viewer.id, "newer_small", created_at=t0.replace(hour=1), post_id=newer_small_id)
+    make_post(viewer.id, "newer_big", created_at=t0.replace(hour=1), post_id=newer_big_id)
+
+    items, _ = get_following_feed(db, viewer_user_id=viewer.id, cursor=None, limit=20)
+    assert [item["id"] for item in items] == [
+        str(newer_big_id),
+        str(newer_small_id),
+        str(older),
+    ]
+
+
+def test_following_feed_includes_interaction_counts_and_flags(
+    db: Session,
+    make_user,
+) -> None:
+    author = make_user("author_counts")
+    viewer = make_user("viewer_counts")
+    commenter = make_user("commenter_counts")
+
+    created = create_post(
+        db,
+        viewer_user_id=author.id,
+        caption="count me",
+        media_items=[CreatePostMediaItem(key="uploads/counts.jpg", width=800, height=1000, order=0)],
+    )
+    post_id = uuid.UUID(created["id"])
+
+    like_post(db, post_id=post_id, viewer_user_id=viewer.id)
+    like_post(db, post_id=post_id, viewer_user_id=commenter.id)
+    save_post(db, post_id=post_id, viewer_user_id=viewer.id)
+    create_comment(db, post_id=post_id, viewer_user_id=viewer.id, body="first")
+    create_comment(db, post_id=post_id, viewer_user_id=commenter.id, body="second")
+
+    items, _ = get_following_feed(db, viewer_user_id=viewer.id, cursor=None, limit=20)
+    target = next(item for item in items if item["id"] == str(post_id))
+
+    assert target["like_count"] == 2
+    assert target["comment_count"] == 2
+    assert target["viewer_liked"] is True
+    assert target["viewer_saved"] is True
+
+
+def test_saved_posts_cursor_pagination_is_stable(
+    db: Session,
+    make_user,
+) -> None:
+    viewer = make_user("viewer_saved")
+
+    p1 = create_post(
+        db,
+        viewer_user_id=viewer.id,
+        caption="p1",
+        media_items=[CreatePostMediaItem(key="uploads/s1.jpg", width=100, height=100, order=0)],
+    )
+    p2 = create_post(
+        db,
+        viewer_user_id=viewer.id,
+        caption="p2",
+        media_items=[CreatePostMediaItem(key="uploads/s2.jpg", width=100, height=100, order=0)],
+    )
+    p3 = create_post(
+        db,
+        viewer_user_id=viewer.id,
+        caption="p3",
+        media_items=[CreatePostMediaItem(key="uploads/s3.jpg", width=100, height=100, order=0)],
+    )
+
+    save_post(db, post_id=uuid.UUID(p1["id"]), viewer_user_id=viewer.id)
+    save_post(db, post_id=uuid.UUID(p2["id"]), viewer_user_id=viewer.id)
+    save_post(db, post_id=uuid.UUID(p3["id"]), viewer_user_id=viewer.id)
+
+    page_one, cursor = get_saved_posts(db, viewer_user_id=viewer.id, cursor=None, limit=2)
+    page_two, second_cursor = get_saved_posts(db, viewer_user_id=viewer.id, cursor=cursor, limit=2)
+
+    assert len(page_one) == 2
+    assert len(page_two) == 1
+    assert cursor is not None
+    assert second_cursor is None

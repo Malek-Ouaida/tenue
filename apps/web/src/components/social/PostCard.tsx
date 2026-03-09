@@ -21,7 +21,10 @@ export function PostCard({
   const media = post.media[0];
 
   return (
-    <article className="overflow-hidden rounded-3xl bg-[rgb(var(--card))] ring-1 ring-[rgb(var(--border))]/70">
+    <article
+      data-testid={`post-card-${post.id}`}
+      className="overflow-hidden rounded-3xl bg-[rgb(var(--card))] ring-1 ring-[rgb(var(--border))]/70"
+    >
       {media ? (
         <Link href={`/posts/${post.id}`} className="relative block aspect-[4/5] w-full">
           <Image
@@ -52,6 +55,7 @@ export function PostCard({
           <button
             type="button"
             onClick={() => void onToggleLike?.(post)}
+            data-testid={`like-${post.id}`}
             className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[rgb(var(--fg))] ring-1 ring-[rgb(var(--border))]/70 transition hover:bg-[rgb(var(--card-2))]"
           >
             <Heart className={`h-4 w-4 ${post.viewer_liked ? "fill-current" : ""}`} />
@@ -69,6 +73,7 @@ export function PostCard({
           <button
             type="button"
             onClick={() => void onToggleSave?.(post)}
+            data-testid={`save-${post.id}`}
             className="ml-auto inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[rgb(var(--fg))] ring-1 ring-[rgb(var(--border))]/70 transition hover:bg-[rgb(var(--card-2))]"
           >
             <Bookmark className={`h-4 w-4 ${post.viewer_saved ? "fill-current" : ""}`} />
