@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import uuid
-from typing import Optional, Tuple
 
 from sqlalchemy import and_, delete, desc, exists, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.models.user import User
 from app.models.user_follow import UserFollow
 from app.models.user_profile import UserProfile
@@ -19,6 +19,8 @@ from app.users.cursors import (
 )
 from app.users.follow_schemas import PublicProfileItem
 
+settings = get_settings()
+
 
 class FollowError(ValueError):
     def __init__(self, code: str):
@@ -27,11 +29,18 @@ class FollowError(ValueError):
 
 
 def _profile_to_item(p: UserProfile) -> PublicProfileItem:
+    avatar_url = None
+    if p.avatar_key:
+        if p.avatar_key.startswith("http://") or p.avatar_key.startswith("https://"):
+            avatar_url = p.avatar_key
+        else:
+            avatar_url = f"{settings.s3_public_base_url.rstrip('/')}/{p.avatar_key.lstrip('/')}"
+
     return PublicProfileItem(
         username=p.username,
         display_name=p.display_name,
         bio=p.bio,
-        avatar_key=p.avatar_key,
+        avatar_url=avatar_url,
     )
 
 
@@ -113,8 +122,8 @@ def list_followers(
     *,
     user_id: uuid.UUID,
     limit: int,
-    cursor: Optional[str],
-) -> tuple[list[PublicProfileItem], Optional[str]]:
+    cursor: str | None,
+) -> tuple[list[PublicProfileItem], str | None]:
     if limit < 1 or limit > 50:
         raise FollowError("limit_out_of_range")
 
@@ -122,8 +131,8 @@ def list_followers(
     if cursor:
         try:
             cur = decode_follows_cursor(cursor)
-        except CursorError:
-            raise FollowError("invalid_cursor")
+        except CursorError as e:
+            raise FollowError("invalid_cursor") from e
 
     stmt = (
         select(UserFollow, UserProfile)
@@ -158,8 +167,8 @@ def list_following(
     *,
     user_id: uuid.UUID,
     limit: int,
-    cursor: Optional[str],
-) -> tuple[list[PublicProfileItem], Optional[str]]:
+    cursor: str | None,
+) -> tuple[list[PublicProfileItem], str | None]:
     if limit < 1 or limit > 50:
         raise FollowError("limit_out_of_range")
 
@@ -167,8 +176,8 @@ def list_following(
     if cursor:
         try:
             cur = decode_follows_cursor(cursor)
-        except CursorError:
-            raise FollowError("invalid_cursor")
+        except CursorError as e:
+            raise FollowError("invalid_cursor") from e
 
     stmt = (
         select(UserFollow, UserProfile)
@@ -203,8 +212,8 @@ def search_users(
     *,
     q: str,
     limit: int,
-    cursor: Optional[str],
-) -> tuple[list[PublicProfileItem], Optional[str]]:
+    cursor: str | None,
+) -> tuple[list[PublicProfileItem], str | None]:
     # deterministic, prefix search on username (fast + predictable)
     query = q.strip().lower()
     if not query:
@@ -216,8 +225,8 @@ def search_users(
     if cursor:
         try:
             cur = decode_user_search_cursor(cursor)
-        except CursorError:
-            raise FollowError("invalid_cursor")
+        except CursorError as e:
+            raise FollowError("invalid_cursor") from e
 
     # ORDER BY username ASC, user_id ASC
     stmt = (

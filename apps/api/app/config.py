@@ -49,6 +49,12 @@ class Settings(BaseModel):
     rate_limit_login_email_per_15m: int = 5
     rate_limit_register_ip_per_hr: int = 5
     rate_limit_refresh_session_per_min: int = 30
+    rate_limit_post_create_user_per_min: int = 10
+    rate_limit_comment_create_user_per_min: int = 30
+    rate_limit_follow_toggle_user_per_min: int = 30
+    rate_limit_reaction_toggle_user_per_min: int = 120
+
+    upload_max_bytes: int = 10 * 1024 * 1024
 
 
 @lru_cache
@@ -81,4 +87,9 @@ def get_settings() -> Settings:
         rate_limit_login_email_per_15m=int(os.getenv("RATE_LIMIT_LOGIN_EMAIL_PER_15M", "5")),
         rate_limit_register_ip_per_hr=int(os.getenv("RATE_LIMIT_REGISTER_IP_PER_HR", "5")),
         rate_limit_refresh_session_per_min=int(os.getenv("RATE_LIMIT_REFRESH_SESSION_PER_MIN", "30")),
+        rate_limit_post_create_user_per_min=int(os.getenv("RATE_LIMIT_POST_CREATE_USER_PER_MIN", "10")),
+        rate_limit_comment_create_user_per_min=int(os.getenv("RATE_LIMIT_COMMENT_CREATE_USER_PER_MIN", "30")),
+        rate_limit_follow_toggle_user_per_min=int(os.getenv("RATE_LIMIT_FOLLOW_TOGGLE_USER_PER_MIN", "30")),
+        rate_limit_reaction_toggle_user_per_min=int(os.getenv("RATE_LIMIT_REACTION_TOGGLE_USER_PER_MIN", "120")),
+        upload_max_bytes=int(os.getenv("UPLOAD_MAX_BYTES", str(10 * 1024 * 1024))),
     )
