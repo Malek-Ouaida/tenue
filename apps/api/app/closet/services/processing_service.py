@@ -3,19 +3,35 @@ from __future__ import annotations
 import time
 import uuid
 from dataclasses import dataclass
+from typing import Any
 
 from sqlalchemy.orm import Session
 
 from app.closet.providers.background_removal import (
     BackgroundRemovalError,
+    BackgroundRemovalProvider,
     build_background_removal_provider,
+)
+from app.closet.providers.garment_analysis import (
+    GarmentAnalysisError,
+    GarmentAnalysisProvider,
+    build_garment_analysis_provider,
 )
 from app.closet.repositories.item_repository import ClosetItemRepository, ClosetRepositoryError
 from app.closet.repositories.processing_run_repository import (
     ClosetProcessingRunRepository,
     ClosetProcessingRunRepositoryError,
 )
+from app.closet.services.garment_analysis_service import (
+    GarmentAnalysisServiceError,
+    analyze_garment,
+)
 from app.closet.services.image_processing_service import ImageProcessingError, process_image
+from app.closet.services.normalization_service import (
+    ClosetNormalizationServiceError,
+    normalize_garment_analysis,
+    persist_processed_metadata,
+)
 from app.config import get_settings
 from app.models.closet_item import ClosetItemStatus, ClosetProcessingRun
 from app.s3_client import s3_client
@@ -88,10 +104,24 @@ def _put_s3_object(*, key: str, body: bytes, content_type: str, meta: dict[str, 
 def _validate_state(status: ClosetItemStatus) -> None:
     if status == ClosetItemStatus.PROCESSING:
         raise ClosetProcessingError(code="processing_in_progress")
-    if status == ClosetItemStatus.CONFIRMED:
+    if status in {ClosetItemStatus.CONFIRMED, ClosetItemStatus.PROCESSED}:
         raise ClosetProcessingError(code="invalid_item_state")
-    if status not in {ClosetItemStatus.DRAFT, ClosetItemStatus.FAILED, ClosetItemStatus.PROCESSED}:
+    if status not in {ClosetItemStatus.DRAFT, ClosetItemStatus.FAILED}:
         raise ClosetProcessingError(code="invalid_item_state")
+
+
+def _build_providers() -> tuple[BackgroundRemovalProvider, GarmentAnalysisProvider]:
+    try:
+        background_provider = build_background_removal_provider(settings)
+    except BackgroundRemovalError as e:
+        raise ClosetProcessingError(code=e.code) from e
+
+    try:
+        garment_provider = build_garment_analysis_provider(settings)
+    except GarmentAnalysisError as e:
+        raise ClosetProcessingError(code=e.code) from e
+
+    return background_provider, garment_provider
 
 
 async def process_item_background(
@@ -111,7 +141,7 @@ async def process_item_background(
     if not item.original_image_key:
         raise ClosetProcessingError(code="original_image_missing")
 
-    provider = build_background_removal_provider(settings)
+    background_provider, garment_provider = _build_providers()
     run: ClosetProcessingRun | None = None
     run_started_perf: float | None = None
 
@@ -128,14 +158,17 @@ async def process_item_background(
 
     try:
         run_started_perf = time.perf_counter()
-        run = ClosetProcessingRunRepository.create_started_run(
-            db,
-            run_id=uuid.uuid4(),
-            item_id=item.id,
-            stage="image_processing",
-            provider=provider.name,
-            provider_version=provider.version,
-        )
+        try:
+            run = ClosetProcessingRunRepository.create_started_run(
+                db,
+                run_id=uuid.uuid4(),
+                item_id=item.id,
+                stage="image_processing",
+                provider=background_provider.name,
+                provider_version=background_provider.version,
+            )
+        except ClosetProcessingRunRepositoryError as e:
+            raise ClosetProcessingError(code=e.code) from e
 
         original_bytes = _read_s3_object(key=item.original_image_key)
         original_content_type = (
@@ -144,50 +177,131 @@ async def process_item_background(
             else "application/octet-stream"
         )
 
-        result = await process_image(
+        image_result = await process_image(
             image_bytes=original_bytes,
             content_type=original_content_type,
-            provider=provider,
+            provider=background_provider,
         )
-        run_raw_response = result.provider_raw_response
+        run_raw_response = image_result.provider_raw_response
 
         processed_key = _build_processed_key(
             user_id=user_id,
             item_id=item.id,
-            extension=result.processed_image.extension,
+            extension=image_result.processed_image.extension,
         )
         thumbnail_key = _build_thumbnail_key(
             user_id=user_id,
             item_id=item.id,
-            extension=result.thumbnail_image.extension,
+            extension=image_result.thumbnail_image.extension,
         )
 
         _put_s3_object(
             key=processed_key,
-            body=result.processed_image.image_bytes,
-            content_type=result.processed_image.content_type,
-            meta=result.processed_image.meta_json,
+            body=image_result.processed_image.image_bytes,
+            content_type=image_result.processed_image.content_type,
+            meta=image_result.processed_image.meta_json,
         )
         _put_s3_object(
             key=thumbnail_key,
-            body=result.thumbnail_image.image_bytes,
-            content_type=result.thumbnail_image.content_type,
-            meta=result.thumbnail_image.meta_json,
+            body=image_result.thumbnail_image.image_bytes,
+            content_type=image_result.thumbnail_image.content_type,
+            meta=image_result.thumbnail_image.meta_json,
         )
 
+        if run and run_started_perf is not None:
+            latency_ms = max(0, int((time.perf_counter() - run_started_perf) * 1000))
+            try:
+                ClosetProcessingRunRepository.mark_succeeded(
+                    db,
+                    run=run,
+                    latency_ms=latency_ms,
+                    raw_response=run_raw_response,
+                )
+            except ClosetProcessingRunRepositoryError as e:
+                raise ClosetProcessingError(code=e.code) from e
+            run = None
+            run_started_perf = None
+            run_raw_response = None
+
+        processed_image_url = _public_url_for_key(key=processed_key)
+
+        run_started_perf = time.perf_counter()
         try:
-            item = ClosetItemRepository.mark_processing_succeeded(
+            run = ClosetProcessingRunRepository.create_started_run(
+                db,
+                run_id=uuid.uuid4(),
+                item_id=item.id,
+                stage="garment_analysis",
+                provider=garment_provider.name,
+                provider_version=garment_provider.version,
+            )
+        except ClosetProcessingRunRepositoryError as e:
+            raise ClosetProcessingError(code=e.code) from e
+
+        garment_result = await analyze_garment(
+            image_url=processed_image_url,
+            provider=garment_provider,
+        )
+        run_raw_response = garment_result.raw_response
+
+        if run and run_started_perf is not None:
+            latency_ms = max(0, int((time.perf_counter() - run_started_perf) * 1000))
+            try:
+                ClosetProcessingRunRepository.mark_succeeded(
+                    db,
+                    run=run,
+                    latency_ms=latency_ms,
+                    raw_response=run_raw_response,
+                )
+            except ClosetProcessingRunRepositoryError as e:
+                raise ClosetProcessingError(code=e.code) from e
+            run = None
+            run_started_perf = None
+            run_raw_response = None
+
+        run_started_perf = time.perf_counter()
+        try:
+            run = ClosetProcessingRunRepository.create_started_run(
+                db,
+                run_id=uuid.uuid4(),
+                item_id=item.id,
+                stage="metadata_normalization",
+                provider="normalization_engine",
+                provider_version="v1",
+            )
+        except ClosetProcessingRunRepositoryError as e:
+            raise ClosetProcessingError(code=e.code) from e
+
+        normalized_metadata = normalize_garment_analysis(
+            db,
+            extraction=garment_result.extraction,
+        )
+
+        ai_raw_response_payload: dict[str, Any] = {
+            "extraction": garment_result.extraction.model_dump(mode="json"),
+            "provider_raw_response": garment_result.raw_response,
+            "normalized": normalized_metadata.to_debug_payload(),
+        }
+        run_raw_response = {"normalized": normalized_metadata.to_debug_payload()}
+
+        try:
+            item = persist_processed_metadata(
                 db,
                 item=item,
                 processed_image_key=processed_key,
-                processed_image_meta=result.processed_image.meta_json,
+                processed_image_meta=image_result.processed_image.meta_json,
                 thumbnail_key=thumbnail_key,
-                thumbnail_meta=result.thumbnail_image.meta_json,
+                thumbnail_meta=image_result.thumbnail_image.meta_json,
+                ai_provider=garment_result.provider_name,
+                ai_provider_version=garment_result.provider_version,
+                ai_raw_response=ai_raw_response_payload,
+                normalized_metadata=normalized_metadata,
             )
-        except ClosetRepositoryError as e:
+        except ClosetNormalizationServiceError as e:
             _delete_object_best_effort(key=processed_key)
             _delete_object_best_effort(key=thumbnail_key)
             raise ClosetProcessingError(code=e.code) from e
+
         if run and run_started_perf is not None:
             latency_ms = max(0, int((time.perf_counter() - run_started_perf) * 1000))
             try:
@@ -204,21 +318,24 @@ async def process_item_background(
             item_id=item.id,
             item_status=item.item_status.value,
             processed_image_key=processed_key,
-            processed_image_url=_public_url_for_key(key=processed_key),
+            processed_image_url=processed_image_url,
             thumbnail_key=thumbnail_key,
             thumbnail_url=_public_url_for_key(key=thumbnail_key),
             processing_attempt_count=item.processing_attempt_count,
-            provider_name=result.provider_name,
-            provider_version=result.provider_version,
+            provider_name=garment_result.provider_name,
+            provider_version=garment_result.provider_version,
         )
-    except BackgroundRemovalError as e:
-        error_code = e.code
-        error_message = None
-        run_raw_response = e.raw_response
     except ImageProcessingError as e:
         error_code = e.code
         error_message = None
         run_raw_response = e.raw_response
+    except GarmentAnalysisServiceError as e:
+        error_code = e.code
+        error_message = None
+        run_raw_response = e.raw_response
+    except ClosetNormalizationServiceError as e:
+        error_code = e.code
+        error_message = None
     except ClosetProcessingError as e:
         error_code = e.code
         error_message = None
