@@ -27,6 +27,11 @@ from app.closet.services.garment_analysis_service import (
     analyze_garment,
 )
 from app.closet.services.image_processing_service import ImageProcessingError, process_image
+from app.closet.services.normalization_service import (
+    ClosetNormalizationServiceError,
+    normalize_garment_analysis,
+    persist_processed_metadata,
+)
 from app.config import get_settings
 from app.models.closet_item import ClosetItemStatus, ClosetProcessingRun
 from app.s3_client import s3_client
@@ -99,9 +104,9 @@ def _put_s3_object(*, key: str, body: bytes, content_type: str, meta: dict[str, 
 def _validate_state(status: ClosetItemStatus) -> None:
     if status == ClosetItemStatus.PROCESSING:
         raise ClosetProcessingError(code="processing_in_progress")
-    if status == ClosetItemStatus.CONFIRMED:
+    if status in {ClosetItemStatus.CONFIRMED, ClosetItemStatus.PROCESSED}:
         raise ClosetProcessingError(code="invalid_item_state")
-    if status not in {ClosetItemStatus.DRAFT, ClosetItemStatus.FAILED, ClosetItemStatus.PROCESSED}:
+    if status not in {ClosetItemStatus.DRAFT, ClosetItemStatus.FAILED}:
         raise ClosetProcessingError(code="invalid_item_state")
 
 
@@ -239,13 +244,48 @@ async def process_item_background(
         )
         run_raw_response = garment_result.raw_response
 
+        if run and run_started_perf is not None:
+            latency_ms = max(0, int((time.perf_counter() - run_started_perf) * 1000))
+            try:
+                ClosetProcessingRunRepository.mark_succeeded(
+                    db,
+                    run=run,
+                    latency_ms=latency_ms,
+                    raw_response=run_raw_response,
+                )
+            except ClosetProcessingRunRepositoryError as e:
+                raise ClosetProcessingError(code=e.code) from e
+            run = None
+            run_started_perf = None
+            run_raw_response = None
+
+        run_started_perf = time.perf_counter()
+        try:
+            run = ClosetProcessingRunRepository.create_started_run(
+                db,
+                run_id=uuid.uuid4(),
+                item_id=item.id,
+                stage="metadata_normalization",
+                provider="normalization_engine",
+                provider_version="v1",
+            )
+        except ClosetProcessingRunRepositoryError as e:
+            raise ClosetProcessingError(code=e.code) from e
+
+        normalized_metadata = normalize_garment_analysis(
+            db,
+            extraction=garment_result.extraction,
+        )
+
         ai_raw_response_payload: dict[str, Any] = {
             "extraction": garment_result.extraction.model_dump(mode="json"),
             "provider_raw_response": garment_result.raw_response,
+            "normalized": normalized_metadata.to_debug_payload(),
         }
+        run_raw_response = {"normalized": normalized_metadata.to_debug_payload()}
 
         try:
-            item = ClosetItemRepository.mark_processing_succeeded(
+            item = persist_processed_metadata(
                 db,
                 item=item,
                 processed_image_key=processed_key,
@@ -255,8 +295,9 @@ async def process_item_background(
                 ai_provider=garment_result.provider_name,
                 ai_provider_version=garment_result.provider_version,
                 ai_raw_response=ai_raw_response_payload,
+                normalized_metadata=normalized_metadata,
             )
-        except ClosetRepositoryError as e:
+        except ClosetNormalizationServiceError as e:
             _delete_object_best_effort(key=processed_key)
             _delete_object_best_effort(key=thumbnail_key)
             raise ClosetProcessingError(code=e.code) from e
@@ -292,6 +333,9 @@ async def process_item_background(
         error_code = e.code
         error_message = None
         run_raw_response = e.raw_response
+    except ClosetNormalizationServiceError as e:
+        error_code = e.code
+        error_message = None
     except ClosetProcessingError as e:
         error_code = e.code
         error_message = None

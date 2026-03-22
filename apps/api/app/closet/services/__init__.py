@@ -3,6 +3,11 @@ from app.closet.services.garment_analysis_service import (  # noqa: F401
     GarmentAnalysisServiceResult,
     analyze_garment,
 )
+from app.closet.services.normalization_service import (  # noqa: F401
+    ClosetNormalizationServiceError,
+    normalize_garment_analysis,
+    persist_processed_metadata,
+)
 from app.closet.services.processing_service import (  # noqa: F401
     ClosetProcessingError,
     ClosetProcessingResult,
